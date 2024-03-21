@@ -50,6 +50,27 @@ flock_return_t flock_group_handle_create(
  * @param[out] handle group handle
  *
  * @return FLOCK_SUCCESS or error code defined in flock-common.h
+ *
+ * Note: a FLOCK group file is a JSON file with the following format.
+ * ```
+ * {
+ *    "transport": "<protocol>",
+ *    "credentials": 42,
+ *    "members": [
+ *        { "address": "<some-address>", "provider_id": 1234 },
+ *        ...
+ *    ],
+ *    "metadata": {
+ *        "key": "value"
+ *        ...
+ *    }
+ * }
+ * ```
+ * The "transport" field contains the Mercury transport method used (e.g. ofi+tcp),
+ * the "credentials" field contains a credential token if communication with group
+ * members requires one. The "members" field is an array of members, each described
+ * with its address and provider ID. The "metadata" field contains any key/value pairs
+ * relevant to the group's usage.
  */
 flock_return_t flock_group_handle_create_from_file(
         flock_client_t client,
