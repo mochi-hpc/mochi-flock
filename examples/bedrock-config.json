@@ -1,14 +1,14 @@
 {
     "libraries": {
-        "alpha": "libalpha-bedrock-module.so"
+        "flock": "libflock-bedrock-module.so"
     },
     "providers": [
         {
-            "type": "alpha",
-            "name": "my-alpha-provider",
+            "type": "flock",
+            "name": "my-flock-provider",
             "provider_id": 42,
             "config": {
-                "resource": {
+                "group": {
                     "type": "dummy",
                     "config": {}
                 }

@@ -7,8 +7,8 @@
 #include <stdlib.h>
 #include <margo.h>
 #include <assert.h>
-#include <alpha/alpha-client.h>
-#include <alpha/alpha-resource.h>
+#include <flock/flock-client.h>
+#include <flock/flock-group.h>
 
 #define FATAL(...) \
     do { \
@@ -23,7 +23,7 @@ int main(int argc, char** argv)
         exit(-1);
     }
 
-    alpha_return_t ret;
+    flock_return_t ret;
     hg_return_t hret;
     const char* svr_addr_str = argv[1];
     uint16_t    provider_id  = atoi(argv[2]);
@@ -39,39 +39,39 @@ int main(int argc, char** argv)
         FATAL(mid,"margo_addr_lookup failed for address %s", svr_addr_str);
     }
 
-    alpha_client_t alpha_clt;
-    alpha_resource_handle_t alpha_rh;
+    flock_client_t flock_clt;
+    flock_group_handle_t flock_rh;
 
-    margo_info(mid, "Creating ALPHA client");
-    ret = alpha_client_init(mid, &alpha_clt);
-    if(ret != ALPHA_SUCCESS) {
-        FATAL(mid,"alpha_client_init failed (ret = %d)", ret);
+    margo_info(mid, "Creating FLOCK client");
+    ret = flock_client_init(mid, &flock_clt);
+    if(ret != FLOCK_SUCCESS) {
+        FATAL(mid,"flock_client_init failed (ret = %d)", ret);
     }
 
-    margo_info(mid, "Creating resource handle for provider id %d", (int)provider_id);
-    ret = alpha_resource_handle_create(alpha_clt, svr_addr, provider_id, true, &alpha_rh);
-    if(ret != ALPHA_SUCCESS) {
-        FATAL(mid,"alpha_resource_handle_create failed (ret = %d)", ret);
+    margo_info(mid, "Creating group handle for provider id %d", (int)provider_id);
+    ret = flock_group_handle_create(flock_clt, svr_addr, provider_id, true, &flock_rh);
+    if(ret != FLOCK_SUCCESS) {
+        FATAL(mid,"flock_group_handle_create failed (ret = %d)", ret);
     }
 
     margo_info(mid, "Computing sum");
     int32_t result;
-    ret = alpha_compute_sum(alpha_rh, 45, 23, &result);
-    if(ret != ALPHA_SUCCESS) {
-        FATAL(mid,"alpha_compute_sum failed (ret = %d)", ret);
+    ret = flock_compute_sum(flock_rh, 45, 23, &result);
+    if(ret != FLOCK_SUCCESS) {
+        FATAL(mid,"flock_compute_sum failed (ret = %d)", ret);
     }
     margo_info(mid, "45 + 23 = %d", result);
 
-    margo_info(mid, "Releasing resource handle");
-    ret = alpha_resource_handle_release(alpha_rh);
-    if(ret != ALPHA_SUCCESS) {
-        FATAL(mid,"alpha_resource_handle_release failed (ret = %d)", ret);
+    margo_info(mid, "Releasing group handle");
+    ret = flock_group_handle_release(flock_rh);
+    if(ret != FLOCK_SUCCESS) {
+        FATAL(mid,"flock_group_handle_release failed (ret = %d)", ret);
     }
 
     margo_info(mid, "Finalizing client");
-    ret = alpha_client_finalize(alpha_clt);
-    if(ret != ALPHA_SUCCESS) {
-        FATAL(mid,"alpha_client_finalize failed (ret = %d)", ret);
+    ret = flock_client_finalize(flock_clt);
+    if(ret != FLOCK_SUCCESS) {
+        FATAL(mid,"flock_client_finalize failed (ret = %d)", ret);
     }
 
     hret = margo_addr_free(mid, svr_addr);

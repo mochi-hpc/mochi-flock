@@ -3,9 +3,9 @@ exec_prefix=${prefix}
 libdir=${prefix}/lib
 includedir=${prefix}/include
 
-Name: alpha-client
+Name: flock-client
 Description: <insert description here>
-Version: @ALPHA_VERSION@
+Version: @FLOCK_VERSION@
 
 Requires: margo
 Libs: -L${libdir} @CLIENT_PRIVATE_LIBS@

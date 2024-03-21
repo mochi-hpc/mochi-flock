@@ -11,7 +11,7 @@
 #include <mercury_macros.h>
 #include <mercury_proc.h>
 #include <mercury_proc_string.h>
-#include "alpha/alpha-common.h"
+#include "flock/flock-common.h"
 
 /* Client RPC types */
 

@@ -15,99 +15,99 @@ set (bedrock-module-src-files
 include (CMakePackageConfigHelpers)
 
 # where to install files for "find_package"
-set (alpha-pkg "share/cmake/alpha")
+set (flock-pkg "share/cmake/flock")
 
 # set version fo shared library
-set (alpha-vers "${ALPHA_VERSION_MAJOR}.${ALPHA_VERSION_MINOR}")
+set (flock-vers "${FLOCK_VERSION_MAJOR}.${FLOCK_VERSION_MINOR}")
 
 # server library
-add_library (alpha-server ${server-src-files} ${dummy-src-files})
-add_library (alpha::server ALIAS alpha-server)
-target_link_libraries (alpha-server
+add_library (flock-server ${server-src-files} ${dummy-src-files})
+add_library (flock::server ALIAS flock-server)
+target_link_libraries (flock-server
     PUBLIC PkgConfig::margo
     PRIVATE coverage_config PkgConfig::json-c)
-target_include_directories (alpha-server PUBLIC $<INSTALL_INTERFACE:include>)
-target_include_directories (alpha-server BEFORE PUBLIC
+target_include_directories (flock-server PUBLIC $<INSTALL_INTERFACE:include>)
+target_include_directories (flock-server BEFORE PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>)
-target_include_directories (alpha-server BEFORE PUBLIC
+target_include_directories (flock-server BEFORE PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
-set_target_properties (alpha-server
-    PROPERTIES VERSION ${ALPHA_VERSION}
-    SOVERSION ${ALPHA_VERSION_MAJOR})
+set_target_properties (flock-server
+    PROPERTIES VERSION ${FLOCK_VERSION}
+    SOVERSION ${FLOCK_VERSION_MAJOR})
 
 # client library
-add_library (alpha-client ${client-src-files})
-add_library (alpha::client ALIAS alpha-client)
-target_link_libraries (alpha-client
+add_library (flock-client ${client-src-files})
+add_library (flock::client ALIAS flock-client)
+target_link_libraries (flock-client
     PUBLIC PkgConfig::margo
     PRIVATE coverage_config)
-target_include_directories (alpha-client PUBLIC $<INSTALL_INTERFACE:include>)
-target_include_directories (alpha-client BEFORE PUBLIC
+target_include_directories (flock-client PUBLIC $<INSTALL_INTERFACE:include>)
+target_include_directories (flock-client BEFORE PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>)
-target_include_directories (alpha-client BEFORE PUBLIC
+target_include_directories (flock-client BEFORE PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
-set_target_properties (alpha-client
-    PROPERTIES VERSION ${ALPHA_VERSION}
-    SOVERSION ${ALPHA_VERSION_MAJOR})
+set_target_properties (flock-client
+    PROPERTIES VERSION ${FLOCK_VERSION}
+    SOVERSION ${FLOCK_VERSION_MAJOR})
 
 if (${ENABLE_BEDROCK})
 # bedrock-module library
-add_library (alpha-bedrock-module ${bedrock-module-src-files})
-target_link_libraries (alpha-bedrock-module alpha-server alpha-client bedrock-server)
-target_include_directories (alpha-bedrock-module PUBLIC $<INSTALL_INTERFACE:include>)
-target_include_directories (alpha-bedrock-module BEFORE PUBLIC
+add_library (flock-bedrock-module ${bedrock-module-src-files})
+target_link_libraries (flock-bedrock-module flock-server flock-client bedrock-server)
+target_include_directories (flock-bedrock-module PUBLIC $<INSTALL_INTERFACE:include>)
+target_include_directories (flock-bedrock-module BEFORE PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>)
-target_include_directories (alpha-bedrock-module BEFORE PUBLIC
+target_include_directories (flock-bedrock-module BEFORE PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
-set_target_properties (alpha-bedrock-module
-    PROPERTIES VERSION ${ALPHA_VERSION}
-    SOVERSION ${ALPHA_VERSION_MAJOR})
+set_target_properties (flock-bedrock-module
+    PROPERTIES VERSION ${FLOCK_VERSION}
+    SOVERSION ${FLOCK_VERSION_MAJOR})
 endif ()
 
 # installation stuff (packaging and install commands)
 write_basic_package_version_file (
-    "alpha-config-version.cmake"
-    VERSION ${ALPHA_VERSION}
+    "flock-config-version.cmake"
+    VERSION ${FLOCK_VERSION}
     COMPATIBILITY AnyNewerVersion)
 
 # generate our config file for find_package()
 set (INCLUDE_INSTALL_DIR include/)
 set (LIB_INSTALL_DIR lib/)
-configure_package_config_file (alpha-config.cmake.in
-  ${CMAKE_CURRENT_BINARY_DIR}/alpha-config.cmake
-  INSTALL_DESTINATION ${LIB_INSTALL_DIR}/alpha/cmake
+configure_package_config_file (flock-config.cmake.in
+  ${CMAKE_CURRENT_BINARY_DIR}/flock-config.cmake
+  INSTALL_DESTINATION ${LIB_INSTALL_DIR}/flock/cmake
   PATH_VARS INCLUDE_INSTALL_DIR)
 
 # some bits for the pkg-config file
 set (DEST_DIR "${CMAKE_INSTALL_PREFIX}")
-set (SERVER_PRIVATE_LIBS "-lalpha-server")
-set (CLIENT_PRIVATE_LIBS "-lalpha-client")
-configure_file ("alpha-server.pc.in" "alpha-server.pc" @ONLY)
-configure_file ("alpha-client.pc.in" "alpha-client.pc" @ONLY)
+set (SERVER_PRIVATE_LIBS "-lflock-server")
+set (CLIENT_PRIVATE_LIBS "-lflock-client")
+configure_file ("flock-server.pc.in" "flock-server.pc" @ONLY)
+configure_file ("flock-client.pc.in" "flock-client.pc" @ONLY)
 
 # configure config.h
 configure_file ("config.h.in" "config.h" @ONLY)
 
 # "make install" rules
-install (TARGETS alpha-server alpha-client
-         EXPORT alpha-targets
+install (TARGETS flock-server flock-client
+         EXPORT flock-targets
          ARCHIVE DESTINATION lib
          LIBRARY DESTINATION lib)
 if (${ENABLE_BEDROCK})
-    install (TARGETS alpha-bedrock-module
+    install (TARGETS flock-bedrock-module
              ARCHIVE DESTINATION lib
              LIBRARY DESTINATION lib)
 endif ()
-install (EXPORT alpha-targets
-         DESTINATION ${alpha-pkg}
-         FILE "alpha-targets.cmake")
-install (FILES "${CMAKE_CURRENT_BINARY_DIR}/alpha-config.cmake"
-               "${CMAKE_CURRENT_BINARY_DIR}/alpha-config-version.cmake"
-         DESTINATION ${alpha-pkg} )
-install (DIRECTORY ../include/alpha
+install (EXPORT flock-targets
+         DESTINATION ${flock-pkg}
+         FILE "flock-targets.cmake")
+install (FILES "${CMAKE_CURRENT_BINARY_DIR}/flock-config.cmake"
+               "${CMAKE_CURRENT_BINARY_DIR}/flock-config-version.cmake"
+         DESTINATION ${flock-pkg} )
+install (DIRECTORY ../include/flock
          DESTINATION include
          FILES_MATCHING PATTERN "*.h")
-install (FILES "${CMAKE_CURRENT_BINARY_DIR}/alpha-server.pc"
-               "${CMAKE_CURRENT_BINARY_DIR}/alpha-client.pc"
-               "${CMAKE_CURRENT_BINARY_DIR}/alpha-admin.pc"
+install (FILES "${CMAKE_CURRENT_BINARY_DIR}/flock-server.pc"
+               "${CMAKE_CURRENT_BINARY_DIR}/flock-client.pc"
+               "${CMAKE_CURRENT_BINARY_DIR}/flock-admin.pc"
          DESTINATION "lib/pkgconfig/")

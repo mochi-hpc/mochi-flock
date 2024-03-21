@@ -6,8 +6,8 @@
 #ifndef _DUMMY_BACKEND_H
 #define _DUMMY_BACKEND_H
 
-#include "alpha/alpha-server.h"
+#include "flock/flock-server.h"
 
-alpha_return_t alpha_register_dummy_backend(void);
+flock_return_t flock_register_dummy_backend(void);
 
 #endif

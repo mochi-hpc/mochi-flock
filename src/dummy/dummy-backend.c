@@ -5,7 +5,7 @@
  */
 #include <string.h>
 #include <json-c/json.h>
-#include "alpha/alpha-backend.h"
+#include "flock/flock-backend.h"
 #include "../provider.h"
 #include "dummy-backend.h"
 
@@ -14,9 +14,9 @@ typedef struct dummy_context {
     /* ... */
 } dummy_context;
 
-static alpha_return_t dummy_create_resource(
+static flock_return_t dummy_create_group(
         margo_instance_id mid,
-        alpha_provider_t provider,
+        flock_provider_t provider,
         const char* config_str,
         void** context)
 {
@@ -35,7 +35,7 @@ static alpha_return_t dummy_create_resource(
             margo_error(mid, "JSON parse error: %s",
                       json_tokener_error_desc(jerr));
             json_tokener_free(tokener);
-            return ALPHA_ERR_INVALID_CONFIG;
+            return FLOCK_ERR_INVALID_CONFIG;
         }
         json_tokener_free(tokener);
     } else {
@@ -46,15 +46,15 @@ static alpha_return_t dummy_create_resource(
     dummy_context* ctx = (dummy_context*)calloc(1, sizeof(*ctx));
     ctx->config = config;
     *context = (void*)ctx;
-    return ALPHA_SUCCESS;
+    return FLOCK_SUCCESS;
 }
 
-static alpha_return_t dummy_destroy_resource(void* ctx)
+static flock_return_t dummy_destroy_group(void* ctx)
 {
     dummy_context* context = (dummy_context*)ctx;
     json_object_put(context->config);
     free(context);
-    return ALPHA_SUCCESS;
+    return FLOCK_SUCCESS;
 }
 
 static char* dummy_get_config(void* ctx)
@@ -69,17 +69,17 @@ static int32_t dummy_compute_sum(void* ctx, int32_t x, int32_t y)
     return x+y;
 }
 
-static alpha_backend_impl dummy_backend = {
+static flock_backend_impl dummy_backend = {
     .name             = "dummy",
 
-    .create_resource  = dummy_create_resource,
-    .destroy_resource = dummy_destroy_resource,
+    .create_group  = dummy_create_group,
+    .destroy_group = dummy_destroy_group,
     .get_config       = dummy_get_config,
 
     .sum              = dummy_compute_sum
 };
 
-alpha_return_t alpha_register_dummy_backend(void)
+flock_return_t flock_register_dummy_backend(void)
 {
-    return alpha_register_backend(&dummy_backend);
+    return flock_register_backend(&dummy_backend);
 }

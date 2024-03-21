@@ -6,7 +6,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <margo.h>
-#include <alpha/alpha-server.h>
+#include <flock/flock-server.h>
 
 int main(int argc, char** argv)
 {
@@ -25,11 +25,11 @@ int main(int argc, char** argv)
     margo_addr_free(mid,my_address);
     margo_info(mid, "Server running at address %s, with provider id 42", addr_str);
 
-    struct alpha_provider_args args = ALPHA_PROVIDER_ARGS_INIT;
+    struct flock_provider_args args = FLOCK_PROVIDER_ARGS_INIT;
 
-    const char* config = "{ \"resource\":{ \"type\":\"dummy\", \"config\":{} } }";
+    const char* config = "{ \"group\":{ \"type\":\"dummy\", \"config\":{} } }";
 
-    alpha_provider_register(mid, 42, config, &args, ALPHA_PROVIDER_IGNORE);
+    flock_provider_register(mid, 42, config, &args, FLOCK_PROVIDER_IGNORE);
 
     margo_wait_for_finalize(mid);
 
