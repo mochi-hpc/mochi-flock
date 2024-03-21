@@ -292,6 +292,27 @@ flock_return_t flock_group_metadata_access(
         void* context);
 
 /**
+ * @brief Send a key/value pair to be added in the metadata of the
+ * group. How this information will be propagated in the group depends
+ * on the group's implementation. There is no guarantee that the metadata
+ * is added upon completion of this function.
+ *
+ * @param handle Group handle
+ * @param key Key to add
+ * @param key_size Size of the key
+ * @param value Value to add
+ * @param value_size Size of the value
+ *
+ * @return FLOCK_SUCCESS or error code defined in flock-common.h
+ */
+flock_return_t flock_group_metadata_set(
+        flock_group_handle_t handle,
+        const char* key,
+        size_t key_size,
+        const char* value,
+        size_t value_size);
+
+/**
  * @brief Update the internal view of the group.
  *
  * If req != NULL, the operation will be non-blocking
