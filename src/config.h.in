@@ -1,0 +1,19 @@
+/*
+ * (C) 2020 The University of Chicago
+ * 
+ * See COPYRIGHT in top-level directory.
+ */
+#ifndef _CONFIG_H
+#define _CONFIG_H
+
+#cmakedefine ENABLE_LOG_DEBUG
+#cmakedefine ENABLE_LOG_ERROR
+#cmakedefine ENABLE_LOG_INFO
+#cmakedefine ENABLE_LOG_COLORS
+
+#ifdef ENABLE_LOG_DEBUG
+#define ENABLE_LOG_ERROR
+#define ENABLE_LOG_INFO
+#endif
+
+#endif
