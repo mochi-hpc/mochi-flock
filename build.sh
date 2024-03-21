@@ -1,0 +1,4 @@
+#!/bin/bash
+SCRIPT_DIR=$(dirname "$0")
+cmake .. -DENABLE_TESTS=ON -DENABLE_BEDROCK=ON -DENABLE_EXAMPLES=ON
+make

@@ -1,2 +1,1 @@
-Your project "flock" has been setup!
- Enjoy programming with Mochi!
+Flock is Mochi's group management microservice.
