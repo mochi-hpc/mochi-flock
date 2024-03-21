@@ -43,7 +43,7 @@ int main(int argc, char** argv)
     flock_group_handle_t flock_rh;
 
     margo_info(mid, "Creating FLOCK client");
-    ret = flock_client_init(mid, &flock_clt);
+    ret = flock_client_init(mid, ABT_POOL_NULL, &flock_clt);
     if(ret != FLOCK_SUCCESS) {
         FATAL(mid,"flock_client_init failed (ret = %d)", ret);
     }
@@ -53,14 +53,6 @@ int main(int argc, char** argv)
     if(ret != FLOCK_SUCCESS) {
         FATAL(mid,"flock_group_handle_create failed (ret = %d)", ret);
     }
-
-    margo_info(mid, "Computing sum");
-    int32_t result;
-    ret = flock_compute_sum(flock_rh, 45, 23, &result);
-    if(ret != FLOCK_SUCCESS) {
-        FATAL(mid,"flock_compute_sum failed (ret = %d)", ret);
-    }
-    margo_info(mid, "45 + 23 = %d", result);
 
     margo_info(mid, "Releasing group handle");
     ret = flock_group_handle_release(flock_rh);

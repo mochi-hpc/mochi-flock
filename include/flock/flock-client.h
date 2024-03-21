@@ -20,11 +20,15 @@ typedef struct flock_client* flock_client_t;
  * @brief Creates a FLOCK client.
  *
  * @param[in] mid Margo instance
+ * @param[in] pool Pool in which to run operations such as updates
  * @param[out] client FLOCK client
  *
  * @return FLOCK_SUCCESS or error code defined in flock-common.h
  */
-flock_return_t flock_client_init(margo_instance_id mid, flock_client_t* client);
+flock_return_t flock_client_init(
+        margo_instance_id mid,
+        ABT_pool pool,
+        flock_client_t* client);
 
 /**
  * @brief Finalizes a FLOCK client.

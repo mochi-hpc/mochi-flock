@@ -41,7 +41,7 @@ static int flock_init_client(
         bedrock_module_client_t* client)
 {
     margo_instance_id mid = bedrock_args_get_margo_instance(args);
-    return flock_client_init(mid, (flock_client_t*)client);
+    return flock_client_init(mid, ABT_POOL_NULL, (flock_client_t*)client);
 }
 
 static int flock_finalize_client(

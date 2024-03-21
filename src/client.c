@@ -7,7 +7,7 @@
 #include "client.h"
 #include "flock/flock-client.h"
 
-flock_return_t flock_client_init(margo_instance_id mid, flock_client_t* client)
+flock_return_t flock_client_init(margo_instance_id mid, ABT_pool pool, flock_client_t* client)
 {
     flock_client_t c = (flock_client_t)calloc(1, sizeof(*c));
     if(!c) return FLOCK_ERR_ALLOCATION;
@@ -43,7 +43,7 @@ flock_return_t flock_group_handle_create(
         flock_client_t client,
         hg_addr_t addr,
         uint16_t provider_id,
-        bool check,
+        uint32_t mode,
         flock_group_handle_t* handle)
 {
     if(client == FLOCK_CLIENT_NULL)
@@ -51,7 +51,7 @@ flock_return_t flock_group_handle_create(
 
     hg_return_t ret;
 
-    if(check) {
+    if(mode & FLOCK_MODE_INIT_UPDATE) {
         char buffer[sizeof("flock")];
         size_t bufsize = sizeof("flock");
         ret = margo_provider_get_identity(client->mid, addr, provider_id, buffer, &bufsize);
@@ -102,6 +102,7 @@ flock_return_t flock_group_handle_release(flock_group_handle_t handle)
     return FLOCK_SUCCESS;
 }
 
+#if 0
 flock_return_t flock_compute_sum(
         flock_group_handle_t handle,
         int32_t x,
@@ -143,3 +144,4 @@ finish:
     margo_destroy(h);
     return ret;
 }
+#endif

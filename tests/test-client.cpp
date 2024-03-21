@@ -45,7 +45,7 @@ TEST_CASE("Test client interface", "[client]") {
         flock_client_t client;
         flock_return_t ret;
         // test that we can create a client object
-        ret = flock_client_init(context->mid, &client);
+        ret = flock_client_init(context->mid, ABT_POOL_NULL, &client);
         REQUIRE(ret == FLOCK_SUCCESS);
 
         SECTION("Open group") {
@@ -60,14 +60,6 @@ TEST_CASE("Test client interface", "[client]") {
             ret = flock_group_handle_create(client,
                       context->addr, provider_id + 123, true, &rh2);
             REQUIRE(ret == FLOCK_ERR_INVALID_PROVIDER);
-
-            SECTION("Send sum RPC") {
-                // test that we can send a sum RPC to the group
-                int32_t result = 0;
-                ret = flock_compute_sum(rh, 45, 55, &result);
-                REQUIRE(ret == FLOCK_SUCCESS);
-                REQUIRE(result == 100);
-            }
 
             // test that we can increase the ref count
             ret = flock_group_handle_ref_incr(rh);

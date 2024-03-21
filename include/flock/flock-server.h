@@ -51,6 +51,40 @@ flock_return_t flock_provider_register(
         flock_provider_t* provider);
 
 /**
+ * @brief Register callbacks that the provider will call when
+ * a member is updated or when the metadata is changed.
+ *
+ * @param provider Provider
+ * @param member_update_fn Function to call when a member is updated
+ * @param metadata_update_fn Function to call when a metadata is updated
+ * @param context Context to pass to the above functions
+ *
+ * @note The context argument is what will uniquely identify this
+ * callback registration and can be used in flock_provider_remove_update_callback
+ * to deregister these callbacks. It is valid to call flock_provider_add_update_callbacks
+ * multiple times with distinct contexts.
+ *
+ * @return FLOCK_SUCCESS or error code defined in flock-common.h
+ */
+flock_return_t flock_provider_add_update_callbacks(
+        flock_provider_t provider,
+        flock_membership_update_fn member_update_fn,
+        flock_metadata_update_fn metadata_update_fn,
+        void* context);
+
+/**
+ * @brief Remove the callbask associated with the given context.
+ *
+ * @param provider Provider
+ * @param context Context
+ *
+ * @return FLOCK_SUCCESS or error code defined in flock-common.h
+ */
+flock_return_t flock_provider_remove_update_callbacks(
+        flock_provider_t provider,
+        void* context);
+
+/**
  * @brief Destroys the Alpha provider and deregisters its RPC.
  *
  * @param[in] provider Alpha provider
