@@ -49,7 +49,7 @@ flock_return_t flock_group_update(
     hg_handle_t   h;
     update_out_t  out;
     hg_return_t hret;
-    flock_return_t ret;
+    flock_return_t ret = FLOCK_SUCCESS;
 
     hret = margo_create(handle->client->mid, handle->addr, handle->client->update_id, &h);
     if(hret != HG_SUCCESS)
