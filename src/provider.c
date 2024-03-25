@@ -1,5 +1,5 @@
 /*
- * (C) 2020 The University of Chicago
+ * (C) 2024 The University of Chicago
  *
  * See COPYRIGHT in top-level directory.
  */
@@ -23,8 +23,8 @@ static inline flock_backend_impl* find_backend_impl(const char* name);
 static inline flock_return_t add_backend_impl(flock_backend_impl* backend);
 
 /* Client RPCs */
-static DECLARE_MARGO_RPC_HANDLER(flock_sum_ult)
-static void flock_sum_ult(hg_handle_t h);
+static DECLARE_MARGO_RPC_HANDLER(flock_update_ult)
+static void flock_update_ult(hg_handle_t h);
 
 /* FIXME: add other RPC declarations here */
 
@@ -95,11 +95,11 @@ flock_return_t flock_provider_register(
 
     /* Client RPCs */
 
-    id = MARGO_REGISTER_PROVIDER(mid, "flock_sum",
-            sum_in_t, sum_out_t,
-            flock_sum_ult, provider_id, p->pool);
+    id = MARGO_REGISTER_PROVIDER(mid, "flock_update",
+            void, update_out_t,
+            flock_update_ult, provider_id, p->pool);
     margo_register_data(mid, id, (void*)p, NULL);
-    p->sum_id = id;
+    p->update_id = id;
 
     /* FIXME: add other RPC registration here */
     /* ... */
@@ -170,9 +170,7 @@ static void flock_finalize_provider(void* p)
     flock_provider_t provider = (flock_provider_t)p;
     margo_info(provider->mid, "Finalizing FLOCK provider");
     margo_provider_deregister_identity(provider->mid, provider->provider_id);
-    margo_deregister(provider->mid, provider->create_group_id);
-    margo_deregister(provider->mid, provider->destroy_group_id);
-    margo_deregister(provider->mid, provider->sum_id);
+    margo_deregister(provider->mid, provider->update_id);
     /* FIXME deregister other RPC ids ... */
 
     /* destroy the group's context */
@@ -224,11 +222,10 @@ flock_return_t flock_provider_register_backend(
     return add_backend_impl(backend_impl);
 }
 
-static void flock_sum_ult(hg_handle_t h)
+static void flock_update_ult(hg_handle_t h)
 {
     hg_return_t hret;
-    sum_in_t     in;
-    sum_out_t   out;
+    update_out_t   out;
 
     /* find the margo instance */
     margo_instance_id mid = margo_hg_handle_get_instance(h);
@@ -237,32 +234,23 @@ static void flock_sum_ult(hg_handle_t h)
     const struct hg_info* info = margo_get_info(h);
     flock_provider_t provider = (flock_provider_t)margo_registered_data(mid, info->id);
 
-    /* deserialize the input */
-    hret = margo_get_input(h, &in);
-    if(hret != HG_SUCCESS) {
-        margo_error(mid, "Could not deserialize output (mercury error %d)", hret);
-        out.ret = FLOCK_ERR_FROM_MERCURY;
-        goto finish;
-    }
-
     flock_group* group = provider->group;
     if(!group) {
         out.ret = FLOCK_ERR_INVALID_GROUP;
         goto finish;
     }
 
-    /* call sum on the group's context */
-    out.result = group->fn->sum(group->ctx, in.x, in.y);
+    /* call update on the group's context */
+//    out.result = group->fn->update(group->ctx, in.x, in.y);
     out.ret = FLOCK_SUCCESS;
 
-    margo_debug(mid, "Called sum RPC");
+    margo_debug(mid, "Called update RPC");
 
 finish:
     hret = margo_respond(h, &out);
-    hret = margo_free_input(h, &in);
     margo_destroy(h);
 }
-static DEFINE_MARGO_RPC_HANDLER(flock_sum_ult)
+static DEFINE_MARGO_RPC_HANDLER(flock_update_ult)
 
 static inline flock_backend_impl* find_backend_impl(const char* name)
 {

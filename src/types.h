@@ -1,5 +1,5 @@
 /*
- * (C) 2020 The University of Chicago
+ * (C) 2024 The University of Chicago
  *
  * See COPYRIGHT in top-level directory.
  */
@@ -12,15 +12,12 @@
 #include <mercury_proc.h>
 #include <mercury_proc_string.h>
 #include "flock/flock-common.h"
+#include "group-view.h"
 
 /* Client RPC types */
 
-MERCURY_GEN_PROC(sum_in_t,
-        ((int32_t)(x))\
-        ((int32_t)(y)))
-
-MERCURY_GEN_PROC(sum_out_t,
-        ((int32_t)(result))\
+MERCURY_GEN_PROC(update_out_t,
+        ((group_view_t)(view))\
         ((int32_t)(ret)))
 
 /* FIXME: other types come here */

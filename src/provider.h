@@ -1,5 +1,5 @@
 /*
- * (C) 2020 The University of Chicago
+ * (C) 2024 The University of Chicago
  *
  * See COPYRIGHT in top-level directory.
  */
@@ -22,11 +22,8 @@ typedef struct flock_provider {
     ABT_pool            pool;        // Pool on which to post RPC requests
     /* Resource */
     flock_group* group;
-    /* RPC identifiers for admins */
-    hg_id_t create_group_id;
-    hg_id_t destroy_group_id;
     /* RPC identifiers for clients */
-    hg_id_t sum_id;
+    hg_id_t update_id;
     /* ... add other RPC identifiers here ... */
 } flock_provider;
 

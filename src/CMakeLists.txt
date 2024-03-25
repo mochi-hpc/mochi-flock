@@ -3,7 +3,8 @@ set (server-src-files
      provider.c)
 
 set (client-src-files
-     client.c)
+     client.c
+     group-handle.c)
 
 set (dummy-src-files
      dummy/dummy-backend.c)

@@ -1,5 +1,5 @@
 /*
- * (C) 2020 The University of Chicago
+ * (C) 2024 The University of Chicago
  *
  * See COPYRIGHT in top-level directory.
  */
@@ -13,15 +13,18 @@ flock_return_t flock_client_init(margo_instance_id mid, ABT_pool pool, flock_cli
     if(!c) return FLOCK_ERR_ALLOCATION;
 
     c->mid = mid;
+    if(pool == ABT_POOL_NULL)
+        margo_get_handler_pool(mid, &pool);
+    c->pool = pool;
 
     hg_bool_t flag;
     hg_id_t id;
-    margo_registered_name(mid, "flock_sum", &id, &flag);
+    margo_registered_name(mid, "flock_update", &id, &flag);
 
     if(flag == HG_TRUE) {
-        margo_registered_name(mid, "flock_sum", &c->sum_id, &flag);
+        margo_registered_name(mid, "flock_update", &c->update_id, &flag);
     } else {
-        c->sum_id = MARGO_REGISTER(mid, "flock_sum", sum_in_t, sum_out_t, NULL);
+        c->update_id = MARGO_REGISTER(mid, "flock_update", void, update_out_t, NULL);
     }
 
     *client = c;
@@ -39,90 +42,20 @@ flock_return_t flock_client_finalize(flock_client_t client)
     return FLOCK_SUCCESS;
 }
 
-flock_return_t flock_group_handle_create(
-        flock_client_t client,
-        hg_addr_t addr,
-        uint16_t provider_id,
-        uint32_t mode,
-        flock_group_handle_t* handle)
-{
-    if(client == FLOCK_CLIENT_NULL)
-        return FLOCK_ERR_INVALID_ARGS;
-
-    hg_return_t ret;
-
-    if(mode & FLOCK_MODE_INIT_UPDATE) {
-        char buffer[sizeof("flock")];
-        size_t bufsize = sizeof("flock");
-        ret = margo_provider_get_identity(client->mid, addr, provider_id, buffer, &bufsize);
-        if(ret != HG_SUCCESS || strcmp("flock", buffer) != 0)
-            return FLOCK_ERR_INVALID_PROVIDER;
-    }
-
-    flock_group_handle_t rh =
-        (flock_group_handle_t)calloc(1, sizeof(*rh));
-
-    if(!rh) return FLOCK_ERR_ALLOCATION;
-
-    ret = margo_addr_dup(client->mid, addr, &(rh->addr));
-    if(ret != HG_SUCCESS) {
-        free(rh);
-        return FLOCK_ERR_FROM_MERCURY;
-    }
-
-    rh->client      = client;
-    rh->provider_id = provider_id;
-    rh->refcount    = 1;
-
-    client->num_group_handles += 1;
-
-    *handle = rh;
-    return FLOCK_SUCCESS;
-}
-
-flock_return_t flock_group_handle_ref_incr(
-        flock_group_handle_t handle)
-{
-    if(handle == FLOCK_GROUP_HANDLE_NULL)
-        return FLOCK_ERR_INVALID_ARGS;
-    handle->refcount += 1;
-    return FLOCK_SUCCESS;
-}
-
-flock_return_t flock_group_handle_release(flock_group_handle_t handle)
-{
-    if(handle == FLOCK_GROUP_HANDLE_NULL)
-        return FLOCK_ERR_INVALID_ARGS;
-    handle->refcount -= 1;
-    if(handle->refcount == 0) {
-        margo_addr_free(handle->client->mid, handle->addr);
-        handle->client->num_group_handles -= 1;
-        free(handle);
-    }
-    return FLOCK_SUCCESS;
-}
-
-#if 0
-flock_return_t flock_compute_sum(
+flock_return_t flock_group_update(
         flock_group_handle_t handle,
-        int32_t x,
-        int32_t y,
-        int32_t* result)
+        flock_request_t* req)
 {
     hg_handle_t   h;
-    sum_in_t     in;
-    sum_out_t   out;
+    update_out_t  out;
     hg_return_t hret;
     flock_return_t ret;
 
-    in.x = x;
-    in.y = y;
-
-    hret = margo_create(handle->client->mid, handle->addr, handle->client->sum_id, &h);
+    hret = margo_create(handle->client->mid, handle->addr, handle->client->update_id, &h);
     if(hret != HG_SUCCESS)
         return FLOCK_ERR_FROM_MERCURY;
 
-    hret = margo_provider_forward(handle->provider_id, h, &in);
+    hret = margo_provider_forward(handle->provider_id, h, NULL);
     if(hret != HG_SUCCESS) {
         ret = FLOCK_ERR_FROM_MERCURY;
         goto finish;
@@ -134,9 +67,18 @@ flock_return_t flock_compute_sum(
         goto finish;
     }
 
-    ret = out.ret;
-    if(ret == FLOCK_SUCCESS)
-        *result = out.result;
+    LOCK_GROUP_VIEW(&handle->view);
+    handle->view.capacity = out.view.capacity;
+    handle->view.size     = out.view.size;
+    handle->view.members  = out.view.members;
+    handle->view.metadata = out.view.metadata;
+    UNLOCK_GROUP_VIEW(&handle->view);
+
+    // Prevent margo_free_output from freeing the content we just moved
+    out.view.size     = 0;
+    out.view.capacity = 0;
+    out.view.members  = NULL;
+    out.view.metadata = NULL;
 
     margo_free_output(h, &out);
 
@@ -144,4 +86,3 @@ finish:
     margo_destroy(h);
     return ret;
 }
-#endif

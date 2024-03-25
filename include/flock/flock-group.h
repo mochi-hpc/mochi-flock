@@ -1,5 +1,5 @@
 /*
- * (C) 2020 The University of Chicago
+ * (C) 2024 The University of Chicago
  *
  * See COPYRIGHT in top-level directory.
  */
@@ -57,7 +57,7 @@ flock_return_t flock_group_handle_create(
  *    "transport": "<protocol>",
  *    "credentials": 42,
  *    "members": [
- *        { "address": "<some-address>", "provider_id": 1234 },
+ *        { "rank": 12, "address": "<some-address>", "provider_id": 1234 },
  *        ...
  *    ],
  *    "metadata": {
@@ -170,12 +170,12 @@ flock_return_t flock_group_live_member_count(
  *
  * @param void* User-provided context
  * @param size_t Member rank
- * @param hg_addr_t Address of the member
+ * @param const char* Address of the member
  * @param uint16_t Provider ID of the member
  *
  * @return true to continue iterating, false to break
  */
-typedef bool (*flock_member_access_fn)(void*, size_t, hg_addr_t, uint16_t);
+typedef bool (*flock_member_access_fn)(void*, size_t, const char*, uint16_t);
 
 /**
  * @brief Iterate over the members of the group. The iteration
@@ -214,6 +214,25 @@ flock_return_t flock_group_member_get_address(
         hg_addr_t* address);
 
 /**
+ * @brief Get the address of a member at a given rank, as a string.
+ *
+ * @important The caller is responsible for calling free on the address.
+ *
+ * If no member exist at that rank, the address will be set to NULL
+ * and the function will return FLOCK_ERR_NO_MEMBER.
+ *
+ * @param[in] handle Group handle
+ * @param[in] rank Rank of the process
+ * @param[out] address Address of the process
+ *
+ * @return FLOCK_SUCCESS or error code defined in flock-common.h
+ */
+flock_return_t flock_group_member_get_address_string(
+        flock_group_handle_t handle,
+        size_t rank,
+        char** address);
+
+/**
  * @brief Get the provider ID of a member at a given rank.
  *
  * If no member exist at that rank, the function will return FLOCK_ERR_NO_MEMBER.
@@ -241,7 +260,7 @@ flock_return_t flock_group_member_get_provider_id(
  */
 flock_return_t flock_group_member_get_rank(
         flock_group_handle_t handle,
-        hg_addr_t address,
+        const char* address,
         uint16_t provider_id,
         size_t* rank);
 
@@ -250,13 +269,11 @@ flock_return_t flock_group_member_get_rank(
  *
  * @param void* User-provided context
  * @param const char* Metadata key
- * @param size_t Size of the metadata key
  * @param const char* Metadata value
- * @param size_t Size of the metadata value
  *
  * @return true to continue iterating, false to break
  */
-typedef bool (*flock_metadata_access_fn)(void*, const char*, size_t, const char*, size_t);
+typedef bool (*flock_metadata_access_fn)(void*, const char*, const char*);
 
 /**
  * @brief Iterate over the metadata associated with the group.
@@ -276,9 +293,11 @@ flock_return_t flock_group_metadata_iterate(
  * @brief Get the value associated with a given key and pass
  * the key/value pair to the provided access function.
  *
+ * If no value is found associated with the specified key,
+ * the callback will be called with NULL as the value.
+ *
  * @param handle Group handle
  * @param key Metadata key
- * @param key_size Size of the key
  * @param access_fn Function to call on the metadata
  * @param context Context to pass to the callback
  *
@@ -287,7 +306,6 @@ flock_return_t flock_group_metadata_iterate(
 flock_return_t flock_group_metadata_access(
         flock_group_handle_t handle,
         const char* key,
-        size_t key_size,
         flock_metadata_access_fn access_fn,
         void* context);
 
@@ -299,18 +317,14 @@ flock_return_t flock_group_metadata_access(
  *
  * @param handle Group handle
  * @param key Key to add
- * @param key_size Size of the key
  * @param value Value to add
- * @param value_size Size of the value
  *
  * @return FLOCK_SUCCESS or error code defined in flock-common.h
  */
 flock_return_t flock_group_metadata_set(
         flock_group_handle_t handle,
         const char* key,
-        size_t key_size,
-        const char* value,
-        size_t value_size);
+        const char* value);
 
 /**
  * @brief Update the internal view of the group.
