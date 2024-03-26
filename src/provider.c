@@ -8,7 +8,7 @@
 #include "types.h"
 
 /* backends that we want to add at compile time */
-#include "dummy/dummy-backend.h"
+#include "static/static-backend.h"
 /* Note: other backends can be added dynamically using
  * flock_register_backend */
 
@@ -104,8 +104,8 @@ flock_return_t flock_provider_register(
     /* FIXME: add other RPC registration here */
     /* ... */
 
-    /* add backends available at compiler time (e.g. default/dummy backends) */
-    flock_register_dummy_backend(); // function from "dummy/dummy-backend.h"
+    /* add backends available at compiler time (e.g. default/static backends) */
+    flock_register_static_backend(); // function from "static/static-backend.h"
     /* FIXME: add other backend registrations here */
     /* ... */
 
@@ -199,6 +199,13 @@ flock_return_t flock_provider_destroy(
     return FLOCK_SUCCESS;
 }
 
+static inline void get_backend_config(void* uargs, const struct json_object* config) {
+    struct json_object* root = (struct json_object*)uargs;
+    struct json_object* config_cpy;
+    json_object_deep_copy((struct json_object*)config, &config_cpy,  NULL);
+    json_object_object_add(root, "config", config_cpy);
+}
+
 char* flock_provider_get_config(flock_provider_t provider)
 {
     if (!provider) return NULL;
@@ -208,10 +215,7 @@ char* flock_provider_get_config(flock_provider_t provider)
         json_object_object_add(root, "group", group);
         struct json_object* group_type = json_object_new_string(provider->group->fn->name);
         json_object_object_add(group, "type", group_type);
-        char* group_config_str = (provider->group->fn->get_config)(provider->group->ctx);
-        struct json_object* group_config = json_tokener_parse(group_config_str);
-        free(group_config_str);
-        json_object_object_add(group, "config", group_config);
+        (provider->group->fn->get_config)(provider->group->ctx, get_backend_config, (void*)root);
     }
     char* result = strdup(json_object_to_json_string(root));
     json_object_put(root);

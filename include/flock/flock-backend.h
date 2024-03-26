@@ -8,6 +8,7 @@
 
 #include <margo.h>
 #include <flock/flock-common.h>
+#include <flock/flock-group-view.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,7 +26,12 @@ typedef struct flock_backend_init_args {
 
 typedef flock_return_t (*flock_backend_init_fn)(const flock_backend_init_args_t* args, void**);
 typedef flock_return_t (*flock_backend_finalize_fn)(void*);
-typedef char* (*flock_backend_get_config_fn)(void*);
+typedef flock_return_t (*flock_backend_get_config_fn)(void*, void (*)(void*, const struct json_object*), void*);
+typedef flock_return_t (*flock_backend_get_view_fn)(void*, void (*)(void*, const flock_group_view_t*), void*);
+typedef flock_return_t (*flock_backend_add_metadata_fn)(void*, const char*, const char*);
+typedef flock_return_t (*flock_backend_remove_metadata_fn)(void*, const char*);
+typedef flock_return_t (*flock_backend_add_member_fn)(void*, uint64_t, const char*, uint16_t);
+typedef flock_return_t (*flock_backend_remove_member_fn)(void*, uint64_t);
 
 /**
  * @brief Implementation of an FLOCK backend.
@@ -33,13 +39,15 @@ typedef char* (*flock_backend_get_config_fn)(void*);
 typedef struct flock_backend_impl {
     // backend name
     const char* name;
-    // backend management functions
-    flock_backend_init_fn       init_group;
-    flock_backend_finalize_fn   destroy_group;
-    flock_backend_get_config_fn get_config;
-    // RPC functions
-    int32_t (*sum)(void*, int32_t, int32_t);
-    // ... add other functions here
+    // backend functions
+    flock_backend_init_fn            init_group;
+    flock_backend_finalize_fn        destroy_group;
+    flock_backend_get_config_fn      get_config;
+    flock_backend_get_view_fn        get_view;
+    flock_backend_add_member_fn      add_member;
+    flock_backend_remove_member_fn   remove_member;
+    flock_backend_add_metadata_fn    add_metadata;
+    flock_backend_remove_metadata_fn remove_metadata;
 } flock_backend_impl;
 
 /**

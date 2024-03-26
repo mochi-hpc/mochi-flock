@@ -6,8 +6,8 @@ set (client-src-files
      client.c
      group-handle.c)
 
-set (dummy-src-files
-     dummy/dummy-backend.c)
+set (static-src-files
+     static/static-backend.c)
 
 set (bedrock-module-src-files
      bedrock-module.c)
@@ -22,7 +22,7 @@ set (flock-pkg "share/cmake/flock")
 set (flock-vers "${FLOCK_VERSION_MAJOR}.${FLOCK_VERSION_MINOR}")
 
 # server library
-add_library (flock-server ${server-src-files} ${dummy-src-files})
+add_library (flock-server ${server-src-files} ${static-src-files})
 add_library (flock::server ALIAS flock-server)
 target_link_libraries (flock-server
     PUBLIC PkgConfig::margo
