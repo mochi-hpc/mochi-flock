@@ -16,21 +16,98 @@ extern "C" {
 
 struct json_object;
 
+/**
+ * @brief Initialization arguments.
+ *
+ * @note The backend's init_group can call json_object_get on the
+ * config to increase its reference count and keep it internally
+ * (the provider does not modify it).
+ *
+ * @note The backend's init_group can copy the initial_view internally.
+ * If it does it, it should memset the flock_backend_init_args's initial_view
+ * field to 0 so that the provider does not free it.
+ */
 typedef struct flock_backend_init_args {
     margo_instance_id   mid;
     uint16_t            provider_id;
     ABT_pool            pool;
     struct json_object* config;
+    flock_group_view_t  initial_view;
 } flock_backend_init_args_t;
 
 
-typedef flock_return_t (*flock_backend_init_fn)(const flock_backend_init_args_t* args, void**);
+/**
+ * @brief Allocates and initializes the state of the backend.
+ *
+ * @param[in] flock_backend_init_args_t* Initialization arguments.
+ * @param[out] void** Pointer to the allocated state.
+ *
+ * @note This function may move some of the fields of the flock_backend_init_args_t
+ * (see comments about flock_backend_init_args_t above).
+ */
+typedef flock_return_t (*flock_backend_init_fn)(flock_backend_init_args_t* args, void**);
+
+/**
+ * @brief Finalizes and deallocate the state of the backend.
+ *
+ * @param void* Pointer to the backend's state.
+ */
 typedef flock_return_t (*flock_backend_finalize_fn)(void*);
+
+/**
+ * @brief Get the config of the backend and pass it to the
+ * provided function pointer.
+ *
+ * @param void* Pointer to the backend's state.
+ * @param void (*)(void*, const struct json_object*) Function to call on the config.
+ * @param void* Context to pass to the function.
+ */
 typedef flock_return_t (*flock_backend_get_config_fn)(void*, void (*)(void*, const struct json_object*), void*);
+
+/**
+ * @brief Get the group view held by the backend.
+ *
+ * @param void* Pointer to the backend's state.
+ * @param void (*)(void*, const flock_group_view_t*) Function to call on the group view.
+ * @param void* Context to pass to the function.
+ *
+ * @important This function should NOT lock the view using the view's mtx field.
+ */
 typedef flock_return_t (*flock_backend_get_view_fn)(void*, void (*)(void*, const flock_group_view_t*), void*);
+
+/**
+ * @brief Add metadata to the backend.
+ *
+ * @param void* Pointer to the backend's state.
+ * @param const char* Key (null-terminated).
+ * @param const char* Value (null-terminated).
+ */
 typedef flock_return_t (*flock_backend_add_metadata_fn)(void*, const char*, const char*);
+
+/**
+ * @brief Remove metadata from the backend.
+ *
+ * @param void* Pointer to the backend's state.
+ * @param const char* Key (null-terminated).
+ */
 typedef flock_return_t (*flock_backend_remove_metadata_fn)(void*, const char*);
+
+/**
+ * @brief Add a member to the group managed by the backend.
+ *
+ * @param void* Pointer to the backend's state.
+ * @param uint64_t Rank of the member to add.
+ * @param const char* Address of the member.
+ * @param uint16_t Provider ID of the member.
+ */
 typedef flock_return_t (*flock_backend_add_member_fn)(void*, uint64_t, const char*, uint16_t);
+
+/**
+ * @brief Remove a member from the group managed by the backend.
+ *
+ * @param void* Pointer to the backend's state.
+ * @param uint64_t Rank of the member to remove.
+ */
 typedef flock_return_t (*flock_backend_remove_member_fn)(void*, uint64_t);
 
 /**

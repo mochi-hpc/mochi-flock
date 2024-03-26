@@ -367,15 +367,14 @@ static inline const char *flock_group_view_find_metadata(const flock_group_view_
 }
 
 /**
- * @brief Internal serialization function. This function is used by
- * hg_proc_flock_group_view_t, which also locks the view while serializing.
+ * @brief Serialize/deserialize a group view.
  *
  * @param proc Mercury proc object.
  * @param view View to serialize/deserialize.
  *
  * @return hg_return_t code.
  */
-static inline hg_return_t hg_proc_flock_group_view_t_internal(hg_proc_t proc, flock_group_view_t* view) {
+static inline hg_return_t hg_proc_flock_group_view_t(hg_proc_t proc, flock_group_view_t* view) {
     hg_return_t ret = HG_SUCCESS;
     ret = hg_proc_hg_size_t(proc, &view->members.size);
     if(ret != HG_SUCCESS) return ret;
@@ -416,16 +415,16 @@ static inline hg_return_t hg_proc_flock_group_view_t_internal(hg_proc_t proc, fl
 }
 
 /**
- * @brief Serializes/deserializes a flock_group_view_t.
+ * @brief Serializes/deserializes a flock_group_view_t and protect its access with a lock.
  *
  * @param proc Mercury proc object.
  * @param view View to serialize/deserialize.
  *
  * @return hg_return_t code.
  */
-static inline hg_return_t hg_proc_flock_group_view_t(hg_proc_t proc, flock_group_view_t* view) {
+static inline hg_return_t hg_proc_flock_protected_group_view_t(hg_proc_t proc, flock_group_view_t* view) {
     FLOCK_GROUP_VIEW_LOCK(view);
-    hg_return_t hret = hg_proc_flock_group_view_t_internal(proc, view);
+    hg_return_t hret = hg_proc_flock_group_view_t(proc, view);
     FLOCK_GROUP_VIEW_UNLOCK(view);
     return hret;
 }

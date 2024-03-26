@@ -17,11 +17,20 @@ typedef struct static_context {
 } static_context;
 
 static flock_return_t static_create_group(
-        const flock_backend_init_args_t* args,
+        flock_backend_init_args_t* args,
         void** context)
 {
     static_context* ctx = (static_context*)calloc(1, sizeof(*ctx));
-    json_object_deep_copy(args->config, &ctx->config, NULL);
+    if(!ctx) return FLOCK_ERR_ALLOCATION;
+
+    ctx->config         = args->config;
+    json_object_get(ctx->config);
+
+    memcpy(&ctx->view.members, &args->initial_view.members, sizeof(ctx->view.members));
+    memcpy(&ctx->view.metadata, &args->initial_view.metadata, sizeof(ctx->view.metadata));
+    memset(&args->initial_view.members, 0, sizeof(ctx->view.members));
+    memset(&args->initial_view.metadata, 0, sizeof(ctx->view.metadata));
+
     *context = ctx;
     return FLOCK_SUCCESS;
 }
@@ -49,9 +58,7 @@ static flock_return_t static_get_view(
     void* ctx, void (*fn)(void*, const flock_group_view_t* view), void* uargs)
 {
     static_context* context = (static_context*)ctx;
-    FLOCK_GROUP_VIEW_LOCK(&context->view);
     fn(uargs, &context->view);
-    FLOCK_GROUP_VIEW_UNLOCK(&context->view);
     return FLOCK_SUCCESS;
 }
 
@@ -91,15 +98,15 @@ static flock_return_t static_remove_metadata(
 }
 
 static flock_backend_impl static_backend = {
-    .name            = "static",
-    .init_group      = static_create_group,
-    .destroy_group   = static_destroy_group,
-    .get_config      = static_get_config,
-    .get_view        = static_get_view,
-    .add_member      = static_add_member,
-    .remove_member   = static_remove_member,
-    .add_metadata    = static_add_metadata,
-    .remove_metadata = static_remove_metadata
+    .name               = "static",
+    .init_group         = static_create_group,
+    .destroy_group      = static_destroy_group,
+    .get_config         = static_get_config,
+    .get_view           = static_get_view,
+    .add_member         = static_add_member,
+    .remove_member      = static_remove_member,
+    .add_metadata       = static_add_metadata,
+    .remove_metadata    = static_remove_metadata
 };
 
 flock_return_t flock_register_static_backend(void)
