@@ -25,7 +25,7 @@ typedef struct flock_group_handle {
     hg_addr_t      addr;
     uint16_t       provider_id;
     // Group view
-    group_view_t   view;
+    flock_group_view_t view;
     // Credentials
     int64_t        credentials;
 } flock_group_handle;

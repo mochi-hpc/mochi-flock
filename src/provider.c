@@ -131,12 +131,16 @@ flock_return_t flock_provider_register(
             goto finish;
         }
         struct json_object* group_config = json_object_object_get(group, "config");
+
         /* create the new group's context */
         void* context = NULL;
-        ret = backend->create_group(
-            mid, p,
-            group_config ? json_object_to_json_string(group_config) : "{}",
-            &context);
+        flock_backend_init_args_t init_args = {
+            .mid = mid,
+            .pool = p->pool,
+            .provider_id = provider_id,
+            .config = group_config
+        };
+        ret = backend->init_group(&init_args, &context);
         if (ret != FLOCK_SUCCESS) {
             margo_error(mid, "Could not create group, backend returned %d", ret);
             goto finish;
@@ -158,7 +162,7 @@ flock_return_t flock_provider_register(
     if(provider)
         *provider = p;
 
-    margo_info(mid, "FLOCK provider registration done");
+    margo_info(mid, "[flock] Provider registered with ID %d", (int)provider_id);
 
 finish:
     if(config) json_object_put(config);
@@ -168,7 +172,7 @@ finish:
 static void flock_finalize_provider(void* p)
 {
     flock_provider_t provider = (flock_provider_t)p;
-    margo_info(provider->mid, "Finalizing FLOCK provider");
+    margo_info(provider->mid, "[flock] Finalizing provider");
     margo_provider_deregister_identity(provider->mid, provider->provider_id);
     margo_deregister(provider->mid, provider->update_id);
     /* FIXME deregister other RPC ids ... */
@@ -179,19 +183,19 @@ static void flock_finalize_provider(void* p)
     free(provider->group);
     margo_instance_id mid = provider->mid;
     free(provider);
-    margo_info(mid, "FLOCK provider successfuly finalized");
+    margo_info(mid, "[flock] Provider successfuly finalized");
 }
 
 flock_return_t flock_provider_destroy(
         flock_provider_t provider)
 {
     margo_instance_id mid = provider->mid;
-    margo_info(mid, "Destroying FLOCK provider");
+    margo_info(mid, "[flock] Destroying provider");
     /* pop the finalize callback */
     margo_provider_pop_finalize_callback(provider->mid, provider);
     /* call the callback */
     flock_finalize_provider(provider);
-    margo_info(mid, "FLOCK provider successfuly destroyed");
+    margo_info(mid, "[flock] Provider successfuly destroyed");
     return FLOCK_SUCCESS;
 }
 

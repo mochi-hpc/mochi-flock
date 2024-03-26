@@ -67,18 +67,22 @@ flock_return_t flock_group_update(
         goto finish;
     }
 
-    LOCK_GROUP_VIEW(&handle->view);
-    handle->view.capacity = out.view.capacity;
-    handle->view.size     = out.view.size;
-    handle->view.members  = out.view.members;
-    handle->view.metadata = out.view.metadata;
-    UNLOCK_GROUP_VIEW(&handle->view);
+    FLOCK_GROUP_VIEW_LOCK(&handle->view);
+    handle->view.members.size      = out.view.members.size;
+    handle->view.members.capacity  = out.view.members.capacity;
+    handle->view.members.data      = out.view.members.data;
+    handle->view.metadata.size     = out.view.metadata.size;
+    handle->view.metadata.capacity = out.view.metadata.capacity;
+    handle->view.metadata.data     = out.view.metadata.data;
+    FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
 
     // Prevent margo_free_output from freeing the content we just moved
-    out.view.size     = 0;
-    out.view.capacity = 0;
-    out.view.members  = NULL;
-    out.view.metadata = NULL;
+    out.view.members.size      = 0;
+    out.view.members.capacity  = 0;
+    out.view.members.data      = NULL;
+    out.view.metadata.size     = 0;
+    out.view.metadata.capacity = 0;
+    out.view.metadata.data     = NULL;
 
     margo_free_output(h, &out);
 

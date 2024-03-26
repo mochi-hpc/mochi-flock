@@ -13,10 +13,18 @@
 extern "C" {
 #endif
 
-typedef struct flock_provider* flock_provider_t;
+struct json_object;
 
-typedef flock_return_t (*flock_backend_create_fn)(margo_instance_id, flock_provider_t, const char*, void**);
-typedef flock_return_t (*flock_backend_destroy_fn)(void*);
+typedef struct flock_backend_init_args {
+    margo_instance_id   mid;
+    uint16_t            provider_id;
+    ABT_pool            pool;
+    struct json_object* config;
+} flock_backend_init_args_t;
+
+
+typedef flock_return_t (*flock_backend_init_fn)(const flock_backend_init_args_t* args, void**);
+typedef flock_return_t (*flock_backend_finalize_fn)(void*);
 typedef char* (*flock_backend_get_config_fn)(void*);
 
 /**
@@ -26,8 +34,8 @@ typedef struct flock_backend_impl {
     // backend name
     const char* name;
     // backend management functions
-    flock_backend_create_fn     create_group;
-    flock_backend_destroy_fn    destroy_group;
+    flock_backend_init_fn       init_group;
+    flock_backend_finalize_fn   destroy_group;
     flock_backend_get_config_fn get_config;
     // RPC functions
     int32_t (*sum)(void*, int32_t, int32_t);
