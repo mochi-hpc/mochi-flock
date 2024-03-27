@@ -13,7 +13,7 @@
 typedef struct flock_client {
    margo_instance_id mid;
    ABT_pool          pool;
-   hg_id_t           update_id;
+   hg_id_t           get_view_id;
    uint64_t          num_group_handles;
 } flock_client;
 

@@ -17,7 +17,7 @@ struct test_context {
 };
 
 static const uint16_t provider_id = 42;
-static const char* provider_config = "{ \"group\":{ \"type\":\"dummy\", \"config\":{} } }";
+static const char* provider_config = "{ \"group\":{ \"type\":\"static\", \"config\":{} } }";
 
 TEST_CASE("Test client interface", "[client]") {
 

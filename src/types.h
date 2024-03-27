@@ -16,10 +16,8 @@
 
 /* Client RPC types */
 
-MERCURY_GEN_PROC(update_out_t,
+MERCURY_GEN_PROC(get_view_out_t,
         ((flock_group_view_t)(view))\
         ((int32_t)(ret)))
-
-/* FIXME: other types come here */
 
 #endif

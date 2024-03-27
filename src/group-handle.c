@@ -21,13 +21,11 @@ flock_return_t flock_group_handle_create(
 
     hg_return_t hret;
 
-    if(mode & FLOCK_MODE_INIT_UPDATE) {
-        char buffer[sizeof("flock")];
-        size_t bufsize = sizeof("flock");
-        hret = margo_provider_get_identity(client->mid, addr, provider_id, buffer, &bufsize);
-        if(hret != HG_SUCCESS || strcmp("flock", buffer) != 0)
-            return FLOCK_ERR_INVALID_PROVIDER;
-    }
+    char buffer[sizeof("flock")];
+    size_t bufsize = sizeof("flock");
+    hret = margo_provider_get_identity(client->mid, addr, provider_id, buffer, &bufsize);
+    if(hret != HG_SUCCESS || strcmp("flock", buffer) != 0)
+        return FLOCK_ERR_INVALID_PROVIDER;
 
     flock_group_handle_t rh =
         (flock_group_handle_t)calloc(1, sizeof(*rh));
@@ -47,11 +45,20 @@ flock_return_t flock_group_handle_create(
     client->num_group_handles += 1;
 
     if(mode & FLOCK_MODE_INIT_UPDATE) {
-        flock_return_t ret = flock_group_update(rh, NULL);
+        flock_return_t ret = flock_group_update_view(rh, NULL);
         if(ret != FLOCK_SUCCESS) {
             flock_group_handle_release(rh);
             return ret;
         }
+    } else {
+        char address[256];
+        hg_size_t address_size = 256;
+        hret = margo_addr_to_string(client->mid, address, &address_size, addr);
+        if(hret != HG_SUCCESS) {
+            flock_group_handle_release(rh);
+            return FLOCK_ERR_FROM_MERCURY;
+        }
+        flock_group_view_add_member(&rh->view, 0, provider_id, address);
     }
 
     *handle = rh;
@@ -282,7 +289,7 @@ flock_return_t flock_group_handle_create_from_serialized(
     client->num_group_handles += 1;
 
     if(mode & FLOCK_MODE_INIT_UPDATE) {
-        flock_return_t ret = flock_group_update(rh, NULL);
+        flock_return_t ret = flock_group_update_view(rh, NULL);
         if(ret != FLOCK_SUCCESS) {
             flock_group_handle_release(rh);
             goto finish;

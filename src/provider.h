@@ -34,7 +34,7 @@ typedef struct flock_provider {
     update_callback_t update_callbacks;
     ABT_rwlock        update_callbacks_lock;
     /* RPC identifiers for clients */
-    hg_id_t update_id;
+    hg_id_t get_view_id;
     /* ... add other RPC identifiers here ... */
 } flock_provider;
 

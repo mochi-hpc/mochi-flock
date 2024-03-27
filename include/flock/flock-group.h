@@ -327,7 +327,8 @@ flock_return_t flock_group_metadata_set(
         const char* value);
 
 /**
- * @brief Update the internal view of the group.
+ * @brief Update the cached, internal view of the group
+ * by contacting one (or more) of its members.
  *
  * If req != NULL, the operation will be non-blocking
  *
@@ -336,7 +337,7 @@ flock_return_t flock_group_metadata_set(
  *
  * @return FLOCK_SUCCESS or error code defined in flock-common.h
  */
-flock_return_t flock_group_update(
+flock_return_t flock_group_update_view(
         flock_group_handle_t handle,
         flock_request_t* req);
 

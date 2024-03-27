@@ -29,10 +29,9 @@ static void dispatch_metadata_update(
     void* p, const char* key, const char* value);
 
 /* Client RPCs */
-static DECLARE_MARGO_RPC_HANDLER(flock_update_ult)
-static void flock_update_ult(hg_handle_t h);
+static DECLARE_MARGO_RPC_HANDLER(flock_get_view_ult)
+static void flock_get_view_ult(hg_handle_t h);
 
-/* FIXME: add other RPC declarations here */
 
 flock_return_t flock_provider_register(
         margo_instance_id mid,
@@ -48,17 +47,17 @@ flock_return_t flock_provider_register(
     hg_bool_t flag;
     flock_return_t ret = FLOCK_SUCCESS;
 
-    margo_info(mid, "Registering FLOCK provider with provider id %u", provider_id);
+    margo_info(mid, "[flock] Registering provider with provider id %u", provider_id);
 
     /* check if another provider with the same ID is already registered */
     if(margo_provider_registered_identity(mid, provider_id)) {
-        margo_error(mid, "A provider with the same ID is already registered");
+        margo_error(mid, "[flock] A provider with the same ID is already registered");
         return FLOCK_ERR_INVALID_PROVIDER;
     }
 
     flag = margo_is_listening(mid);
     if(flag == HG_FALSE) {
-        margo_error(mid, "Margo instance is not a server");
+        margo_error(mid, "[flock] Margo instance is not a server");
         return FLOCK_ERR_INVALID_ARGS;
     }
 
@@ -72,14 +71,14 @@ flock_return_t flock_provider_register(
                 strlen(config_str));
         if (!config) {
             jerr = json_tokener_get_error(tokener);
-            margo_error(mid, "JSON parse error: %s",
+            margo_error(mid, "[flock] JSON parse error: %s",
                     json_tokener_error_desc(jerr));
             json_tokener_free(tokener);
             return FLOCK_ERR_INVALID_CONFIG;
         }
         json_tokener_free(tokener);
         if (!(json_object_is_type(config, json_type_object))) {
-            margo_error(mid, "JSON configuration should be an object");
+            margo_error(mid, "[flock] JSON configuration should be an object");
             json_object_put(config);
             return FLOCK_ERR_INVALID_CONFIG;
         }
@@ -90,7 +89,7 @@ flock_return_t flock_provider_register(
 
     p = (flock_provider_t)calloc(1, sizeof(*p));
     if(p == NULL) {
-        margo_error(mid, "Could not allocate memory for provider");
+        margo_error(mid, "[flock] Could not allocate memory for provider");
         json_object_put(config);
         return FLOCK_ERR_ALLOCATION;
     }
@@ -104,11 +103,11 @@ flock_return_t flock_provider_register(
 
     /* Client RPCs */
 
-    id = MARGO_REGISTER_PROVIDER(mid, "flock_update",
-            void, update_out_t,
-            flock_update_ult, provider_id, p->pool);
+    id = MARGO_REGISTER_PROVIDER(mid, "flock_get_view",
+            void, get_view_out_t,
+            flock_get_view_ult, provider_id, p->pool);
     margo_register_data(mid, id, (void*)p, NULL);
-    p->update_id = id;
+    p->get_view_id = id;
 
     /* FIXME: add other RPC registration here */
     /* ... */
@@ -216,7 +215,7 @@ static void flock_finalize_provider(void* p)
     }
 
     margo_provider_deregister_identity(provider->mid, provider->provider_id);
-    margo_deregister(provider->mid, provider->update_id);
+    margo_deregister(provider->mid, provider->get_view_id);
     /* FIXME deregister other RPC ids ... */
 
     /* destroy the group's context */
@@ -272,10 +271,17 @@ flock_return_t flock_provider_register_backend(
     return add_backend_impl(backend_impl);
 }
 
-static void flock_update_ult(hg_handle_t h)
+static void get_view_callback(void* uargs, const flock_group_view_t* view)
 {
-    hg_return_t hret;
-    update_out_t   out;
+    hg_handle_t handle = (hg_handle_t)uargs;
+    get_view_out_t out = {0};
+    out.view = *view;
+    margo_respond(handle, &out);
+}
+
+static void flock_get_view_ult(hg_handle_t h)
+{
+    get_view_out_t err = {0};
 
     /* find the margo instance */
     margo_instance_id mid = margo_hg_handle_get_instance(h);
@@ -286,21 +292,27 @@ static void flock_update_ult(hg_handle_t h)
 
     flock_group* group = provider->group;
     if(!group) {
-        out.ret = FLOCK_ERR_INVALID_GROUP;
-        goto finish;
+        err.ret = FLOCK_ERR_INVALID_GROUP;
+        goto error;
     }
 
     /* call update on the group's context */
-//    out.result = group->fn->update(group->ctx, in.x, in.y);
-    out.ret = FLOCK_SUCCESS;
+    flock_return_t ret = (group->fn->get_view)(group->ctx, get_view_callback, h);
 
-    margo_debug(mid, "Called update RPC");
+    if(ret != FLOCK_SUCCESS) {
+        err.ret = FLOCK_ERR_OTHER;
+        goto error;
+    }
 
 finish:
-    hret = margo_respond(h, &out);
     margo_destroy(h);
+    return;
+
+error:
+    margo_respond(h, &err);
+    goto finish;
 }
-static DEFINE_MARGO_RPC_HANDLER(flock_update_ult)
+static DEFINE_MARGO_RPC_HANDLER(flock_get_view_ult)
 
 static inline flock_backend_impl* find_backend_impl(const char* name)
 {
