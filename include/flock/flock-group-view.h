@@ -261,7 +261,7 @@ static inline ssize_t flock_group_view_metadata_binary_search(
     const flock_group_view_t *view, const char* key)
 {
     ssize_t left = 0;
-    ssize_t right = view->members.size - 1;
+    ssize_t right = view->metadata.size - 1;
     while (left <= right) {
         ssize_t mid = left + (right - left) / 2;
         int cmp = strcmp(view->metadata.data[mid].key, key);

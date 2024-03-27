@@ -10,36 +10,31 @@
 #include <flock/flock-server.h>
 #include <flock/flock-client.h>
 #include <flock/flock-group.h>
+#include "helper.hpp"
 
-struct test_context {
-    margo_instance_id mid;
-    hg_addr_t         addr;
+struct TestContext {
+
+    margo_instance_id mid = MARGO_INSTANCE_NULL;
+    hg_addr_t         addr = HG_ADDR_NULL;
+
+    TestContext() {
+        mid = margo_init("na+sm", MARGO_SERVER_MODE, 0, 0);
+        margo_addr_self(mid, &addr);
+    }
+
+    ~TestContext() {
+        margo_addr_free(mid, addr);
+        margo_finalize(mid);
+    }
 };
-
-static const uint16_t provider_id = 42;
-static const char* provider_config = "{ \"group\":{ \"type\":\"static\", \"config\":{} } }";
 
 TEST_CASE("Test client interface", "[client]") {
 
-    flock_return_t      ret;
-    margo_instance_id   mid;
-    hg_addr_t           addr;
-    // create margo instance
-    mid = margo_init("na+sm", MARGO_SERVER_MODE, 0, 0);
-    REQUIRE(mid != MARGO_INSTANCE_NULL);
-    // get address of current process
-    hg_return_t hret = margo_addr_self(mid, &addr);
-    REQUIRE(hret == HG_SUCCESS);
-    // register flock provider
-    struct flock_provider_args args = FLOCK_PROVIDER_ARGS_INIT;
-    ret = flock_provider_register(
-            mid, provider_id, provider_config, &args,
-            FLOCK_PROVIDER_IGNORE);
-    REQUIRE(ret == FLOCK_SUCCESS);
     // create test context
-    auto context = std::make_unique<test_context>();
-    context->mid   = mid;
-    context->addr  = addr;
+    auto context = std::make_unique<TestContext>();
+
+    // create test group with 5 processes
+    auto group = std::make_unique<TestGroup>(context->mid, 5);
 
     SECTION("Create client") {
         flock_client_t client;
@@ -48,17 +43,17 @@ TEST_CASE("Test client interface", "[client]") {
         ret = flock_client_init(context->mid, ABT_POOL_NULL, &client);
         REQUIRE(ret == FLOCK_SUCCESS);
 
-        SECTION("Open group") {
+        SECTION("Create group handle") {
             flock_group_handle_t rh;
             // test that we can create a group handle
             ret = flock_group_handle_create(client,
-                    context->addr, provider_id, 0, &rh);
+                    context->addr, 1, 0, &rh);
             REQUIRE(ret == FLOCK_SUCCESS);
 
             // test that we get an error when using a wrong provider ID
             flock_group_handle_t rh2;
             ret = flock_group_handle_create(client,
-                      context->addr, provider_id + 123, 0, &rh2);
+                      context->addr, 123, 0, &rh2);
             REQUIRE(ret == FLOCK_ERR_INVALID_PROVIDER);
 
             // test that we can increase the ref count
@@ -76,10 +71,4 @@ TEST_CASE("Test client interface", "[client]") {
         ret = flock_client_finalize(client);
         REQUIRE(ret == FLOCK_SUCCESS);
     }
-
-    // free address
-    margo_addr_free(context->mid, context->addr);
-    // we are not checking the return value of the above function with
-    // munit because we need margo_finalize to be called no matter what.
-    margo_finalize(context->mid);
 }
