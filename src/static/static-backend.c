@@ -23,13 +23,8 @@ static flock_return_t static_create_group(
     static_context* ctx = (static_context*)calloc(1, sizeof(*ctx));
     if(!ctx) return FLOCK_ERR_ALLOCATION;
 
-    ctx->config         = args->config;
-    json_object_get(ctx->config);
-
-    memcpy(&ctx->view.members, &args->initial_view.members, sizeof(ctx->view.members));
-    memcpy(&ctx->view.metadata, &args->initial_view.metadata, sizeof(ctx->view.metadata));
-    memset(&args->initial_view.members, 0, sizeof(ctx->view.members));
-    memset(&args->initial_view.metadata, 0, sizeof(ctx->view.metadata));
+    ctx->config = json_object_new_object();
+    FLOCK_GROUP_VIEW_MOVE(&args->initial_view, &ctx->view);
 
     *context = ctx;
     return FLOCK_SUCCESS;
@@ -65,36 +60,44 @@ static flock_return_t static_get_view(
 static flock_return_t static_add_member(
     void* ctx, uint64_t rank, const char* address, uint16_t provider_id)
 {
+    // LCOV_EXCL_START
     (void)ctx;
     (void)rank;
     (void)address;
     (void)provider_id;
     return FLOCK_ERR_OP_UNSUPPORTED;
+    // LCOV_EXCL_END
 }
 
 static flock_return_t static_remove_member(
     void* ctx, uint64_t rank)
 {
+    // LCOV_EXCL_START
     (void)ctx;
     (void)rank;
     return FLOCK_ERR_OP_UNSUPPORTED;
+    // LCOV_EXCL_END
 }
 
 static flock_return_t static_add_metadata(
     void* ctx, const char* key, const char* value)
 {
+    // LCOV_EXCL_START
     (void)ctx;
     (void)key;
     (void)value;
     return FLOCK_ERR_OP_UNSUPPORTED;
+    // LCOV_EXCL_END
 }
 
 static flock_return_t static_remove_metadata(
     void* ctx, const char* key)
 {
+    // LCOV_EXCL_START
     (void)ctx;
     (void)key;
     return FLOCK_ERR_OP_UNSUPPORTED;
+    // LCOV_EXCL_END
 }
 
 static flock_backend_impl static_backend = {
