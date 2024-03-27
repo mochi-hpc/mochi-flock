@@ -22,6 +22,12 @@ static flock_backend_impl* g_flock_backend_types[FLOCK_MAX_NUM_BACKENDS] = {0};
 static inline flock_backend_impl* find_backend_impl(const char* name);
 static inline flock_return_t add_backend_impl(flock_backend_impl* backend);
 
+/* Functions to dispatch updates to user-supplied callback functions */
+static void dispatch_member_update(
+    void* p, flock_update_t u, size_t rank, const char* address, uint16_t provider_id);
+static void dispatch_metadata_update(
+    void* p, const char* key, const char* value);
+
 /* Client RPCs */
 static DECLARE_MARGO_RPC_HANDLER(flock_update_ult)
 static void flock_update_ult(hg_handle_t h);
@@ -93,6 +99,9 @@ flock_return_t flock_provider_register(
     p->provider_id = provider_id;
     p->pool = a.pool;
 
+    ABT_rwlock_create(&p->update_callbacks_lock);
+    p->update_callbacks = NULL;
+
     /* Client RPCs */
 
     id = MARGO_REGISTER_PROVIDER(mid, "flock_update",
@@ -111,47 +120,69 @@ flock_return_t flock_provider_register(
 
     /* read the configuration to add defined groups */
     struct json_object* group = json_object_object_get(config, "group");
+    struct json_object* group_config = NULL;
     if (group) {
         if (!json_object_is_type(group, json_type_object)) {
-            margo_error(mid, "\"group\" field should be an object in provider configuration");
+            margo_error(mid, "[flock] \"group\" field should be an object in provider configuration");
             ret = FLOCK_ERR_INVALID_CONFIG;
             goto finish;
         }
-        struct json_object* group_type = json_object_object_get(group, "type");
-        if (!json_object_is_type(group_type, json_type_string)) {
-            margo_error(mid, "\"type\" field in group configuration should be a string");
-            ret = FLOCK_ERR_INVALID_CONFIG;
-            goto finish;
+        if(!a.backend) {
+            struct json_object* group_type = json_object_object_get(group, "type");
+            if (!json_object_is_type(group_type, json_type_string)) {
+                margo_error(mid, "[flock] \"type\" field in group configuration should be a string");
+                ret = FLOCK_ERR_INVALID_CONFIG;
+                goto finish;
+            }
+            const char* type = json_object_get_string(group_type);
+            a.backend = find_backend_impl(type);
+            if (!a.backend) {
+                margo_error(mid, "[flock] Could not find backend of type \"%s\"", type);
+                ret = FLOCK_ERR_INVALID_CONFIG;
+                goto finish;
+            }
+        } else if(json_object_object_get(group, "type")) {
+            margo_warning(mid, "[flock] \"type\" field ignored because a "
+                          "backend implementation was provided");
         }
-        const char* type = json_object_get_string(group_type);
-        flock_backend_impl* backend         = find_backend_impl(type);
-        if (!backend) {
-            margo_error(mid, "Could not find backend of type \"%s\"", type);
-            ret = FLOCK_ERR_INVALID_CONFIG;
-            goto finish;
-        }
-        struct json_object* group_config = json_object_object_get(group, "config");
-
-        /* create the new group's context */
-        void* context = NULL;
-        flock_backend_init_args_t init_args = {
-            .mid = mid,
-            .pool = p->pool,
-            .provider_id = provider_id,
-            .config = group_config
-        };
-        ret = backend->init_group(&init_args, &context);
-        if (ret != FLOCK_SUCCESS) {
-            margo_error(mid, "Could not create group, backend returned %d", ret);
-            goto finish;
-        }
-
-        /* set the provider's group */
-        p->group = malloc(sizeof(*(p->group)));
-        p->group->ctx = context;
-        p->group->fn  = backend;
+        group_config = json_object_object_get(group, "config");
+        if(group_config) json_object_get(group_config);
     }
 
+    if(!a.backend) {
+        margo_error(mid, "[flock] No backend provided for the group");
+        ret = FLOCK_ERR_INVALID_CONFIG;
+        goto finish;
+    }
+
+    if(!group_config) group_config = json_object_new_object();
+
+    /* create the new group's context */
+    void* context = NULL;
+    flock_backend_init_args_t backend_init_args = {
+        .mid = mid,
+        .pool = p->pool,
+        .provider_id = provider_id,
+        .config = group_config,
+        .initial_view = FLOCK_GROUP_VIEW_INITIALIZER,
+        .callback_context = p,
+        .member_update_callback = dispatch_member_update,
+        .metadata_update_callback = dispatch_metadata_update
+    };
+
+    if(a.initial_view)
+        FLOCK_GROUP_VIEW_MOVE(a.initial_view, &backend_init_args.initial_view);
+
+    ret = a.backend->init_group(&backend_init_args, &context);
+    if (ret != FLOCK_SUCCESS) {
+        margo_error(mid, "[flock] Could not create group, backend returned %d", ret);
+        goto finish;
+    }
+
+    /* set the provider's group */
+    p->group = malloc(sizeof(*(p->group)));
+    p->group->ctx = context;
+    p->group->fn  = a.backend;
 
     /* set the finalize callback */
     margo_provider_push_finalize_callback(mid, p, &flock_finalize_provider, p);
@@ -166,6 +197,7 @@ flock_return_t flock_provider_register(
 
 finish:
     if(config) json_object_put(config);
+    if(group_config) json_object_put(group_config);
     return ret;
 }
 
@@ -173,6 +205,16 @@ static void flock_finalize_provider(void* p)
 {
     flock_provider_t provider = (flock_provider_t)p;
     margo_info(provider->mid, "[flock] Finalizing provider");
+
+    ABT_rwlock_free(&provider->update_callbacks_lock);
+    update_callback_t u = provider->update_callbacks;
+    update_callback_t tmp;
+    while(u) {
+        tmp = u;
+        u = u->next;
+        free(tmp);
+    }
+
     margo_provider_deregister_identity(provider->mid, provider->provider_id);
     margo_deregister(provider->mid, provider->update_id);
     /* FIXME deregister other RPC ids ... */
@@ -286,4 +328,82 @@ static inline flock_return_t add_backend_impl(
 flock_return_t flock_register_backend(flock_backend_impl* backend_impl)
 {
     return add_backend_impl(backend_impl);
+}
+
+flock_return_t flock_provider_add_update_callbacks(
+        flock_provider_t provider,
+        flock_membership_update_fn member_update_fn,
+        flock_metadata_update_fn metadata_update_fn,
+        void* context)
+{
+    ABT_rwlock_wrlock(provider->update_callbacks_lock);
+    // Append at the end or with the same context if found
+    // (this will replace any membership/metadata callback already
+    // registered with the same context).
+    update_callback_t current = provider->update_callbacks;
+    while(true) {
+        if(current->args == context) {
+            current->member_cb   = member_update_fn;
+            current->metadata_cb = metadata_update_fn;
+            break;
+        } else if(current->next == NULL) {
+            current->next = (update_callback_t)malloc(sizeof(*current->next));
+            current->next->args = context;
+            current->next->next = NULL;
+            // callbacks will be set in the next loop
+        }
+        current = current->next;
+    }
+    ABT_rwlock_unlock(provider->update_callbacks_lock);
+    return FLOCK_SUCCESS;
+}
+
+flock_return_t flock_provider_remove_update_callbacks(
+        flock_provider_t provider,
+        void* context)
+{
+    ABT_rwlock_wrlock(provider->update_callbacks_lock);
+    update_callback_t current = provider->update_callbacks;
+    update_callback_t previous = NULL;
+    while(true) {
+        if(current->args == context) {
+            if(!previous) {
+                provider->update_callbacks = current->next;
+            } else {
+                previous->next = current->next;
+            }
+            free(current);
+            break;
+        }
+        previous = current;
+        current  = current->next;
+    }
+    ABT_rwlock_unlock(provider->update_callbacks_lock);
+    return FLOCK_SUCCESS;
+}
+
+static void dispatch_member_update(
+    void* p, flock_update_t u, size_t rank, const char* address, uint16_t provider_id)
+{
+    flock_provider_t provider = (flock_provider_t)p;
+    ABT_rwlock_rdlock(provider->update_callbacks_lock);
+    update_callback_t c = provider->update_callbacks;
+    while(c) {
+        (c->member_cb)(c->args, u, rank, address, provider_id);
+        c = c->next;
+    }
+    ABT_rwlock_unlock(provider->update_callbacks_lock);
+}
+
+static void dispatch_metadata_update(
+    void* p, const char* key, const char* value)
+{
+    flock_provider_t provider = (flock_provider_t)p;
+    ABT_rwlock_rdlock(provider->update_callbacks_lock);
+    update_callback_t c = provider->update_callbacks;
+    while(c) {
+        (c->metadata_cb)(c->args, key, value);
+        c = c->next;
+    }
+    ABT_rwlock_unlock(provider->update_callbacks_lock);
 }

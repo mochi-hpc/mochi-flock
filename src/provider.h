@@ -15,13 +15,24 @@ typedef struct flock_group {
     void*               ctx; // context required by the backend
 } flock_group;
 
+typedef struct update_callback* update_callback_t;
+struct update_callback {
+    flock_membership_update_fn member_cb;
+    flock_metadata_update_fn   metadata_cb;
+    void*                      args;
+    update_callback_t          next;
+};
+
 typedef struct flock_provider {
     /* Margo/Argobots/Mercury environment */
     margo_instance_id   mid;         // Margo instance
     uint16_t            provider_id; // Provider id
     ABT_pool            pool;        // Pool on which to post RPC requests
-    /* Resource */
+    /* Group implementation */
     flock_group* group;
+    /* List of registered membership and metadata callbacks */
+    update_callback_t update_callbacks;
+    ABT_rwlock        update_callbacks_lock;
     /* RPC identifiers for clients */
     hg_id_t update_id;
     /* ... add other RPC identifiers here ... */

@@ -20,15 +20,28 @@ typedef struct flock_provider* flock_provider_t;
 #define FLOCK_PROVIDER_NULL ((flock_provider_t)NULL)
 #define FLOCK_PROVIDER_IGNORE ((flock_provider_t*)NULL)
 
+/**
+ * @brief Optional arguments to pass to the flock_provider_register function.
+ *
+ * The pool will default to the margo_instance_id's default handler pool.
+ *
+ * If NULL, the initial_view will default to a view that include only the current
+ * provider, with rank set to 0. If provided, the provider will take ownership of
+ * the view's content and reset it to empty for the caller.
+ *
+ * If not provided, the backend will default to the type specified in the
+ * JSON configuration passed to flock_provider_register.
+ */
 struct flock_provider_args {
-    ABT_pool            pool;    // Pool used to run RPCs
-    flock_backend_impl* backend; // Type of backend, will take priority over the "type" field in config
-    // ...
+    ABT_pool            pool;
+    flock_group_view_t* initial_view;
+    flock_backend_impl* backend;
 };
 
 #define FLOCK_PROVIDER_ARGS_INIT { \
-    /* .pool = */ ABT_POOL_NULL, \
-    /* .backend = */ NULL \
+    /* .pool = */ ABT_POOL_NULL,   \
+    /* .initial_view = */ NULL,    \
+    /* .backend = */ NULL          \
 }
 
 /**
@@ -36,8 +49,20 @@ struct flock_provider_args {
  * is passed as last argument, the provider will be automatically
  * destroyed when calling margo_finalize.
  *
+ * The config parameter must have the following format.
+ *
+ * ```
+ * {
+ *     "type": "static", // or another backend type
+ *     "group": {
+ *          // backend-specified configuration
+ *     }
+ * }
+ * ```
+ *
  * @param[in] mid Margo instance
  * @param[in] provider_id provider id
+ * @param[in] config Configuration
  * @param[in] args argument structure
  * @param[out] provider provider
  *

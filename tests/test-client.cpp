@@ -52,13 +52,13 @@ TEST_CASE("Test client interface", "[client]") {
             flock_group_handle_t rh;
             // test that we can create a group handle
             ret = flock_group_handle_create(client,
-                    context->addr, provider_id, true, &rh);
+                    context->addr, provider_id, 0, &rh);
             REQUIRE(ret == FLOCK_SUCCESS);
 
             // test that we get an error when using a wrong provider ID
             flock_group_handle_t rh2;
             ret = flock_group_handle_create(client,
-                      context->addr, provider_id + 123, true, &rh2);
+                      context->addr, provider_id + 123, 0, &rh2);
             REQUIRE(ret == FLOCK_ERR_INVALID_PROVIDER);
 
             // test that we can increase the ref count

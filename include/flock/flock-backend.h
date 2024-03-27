@@ -26,13 +26,21 @@ struct json_object;
  * @note The backend's init_group can copy the initial_view internally.
  * If it does it, it should memset the flock_backend_init_args's initial_view
  * field to 0 so that the provider does not free it.
+ *
+ * @note The provided member_update_callback and metadata_update_callback
+ * need to be called by the backend whenever a member leaves or joins,
+ * and whenever the metadata is updated, respectively. When called, these
+ * function must be passed the provided callback_context.
  */
 typedef struct flock_backend_init_args {
-    margo_instance_id   mid;
-    uint16_t            provider_id;
-    ABT_pool            pool;
-    struct json_object* config;
-    flock_group_view_t  initial_view;
+    margo_instance_id          mid;
+    uint16_t                   provider_id;
+    ABT_pool                   pool;
+    struct json_object*        config;
+    flock_group_view_t         initial_view;
+    flock_membership_update_fn member_update_callback;
+    flock_metadata_update_fn   metadata_update_callback;
+    void*                      callback_context;
 } flock_backend_init_args_t;
 
 

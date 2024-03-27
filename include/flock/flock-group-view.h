@@ -78,6 +78,23 @@ typedef struct {
 
 #define FLOCK_GROUP_VIEW_INITIALIZER {{0,0,NULL},{0,0,NULL},ABT_MUTEX_INITIALIZER}
 
+/**
+ * @brief This macro takes two pointers to flock_group_view_t and moves
+ * the content of the source into the destination.
+ *
+ * @warning This macro assumes that the destination is empty. If it is not,
+ * it may cause a member leak as the destination looses the pointers to its data.
+ *
+ * @param __src__ flock_group_view_t* from which to move.
+ * @param __dst__ flock_group_view_t* into which to move.
+ */
+#define FLOCK_GROUP_VIEW_MOVE(__src__, __dst__) do {                                 \
+    memcpy(&(__dst__)->members, &(__src__)->members, sizeof((__src__)->members));    \
+    memcpy(&(__dst__)->metadata, &(__src__)->metadata, sizeof((__src__)->metadata)); \
+    memset(&(__src__)->members, 0, sizeof((__src__)->members));                      \
+    memset(&(__src__)->metadata, 0, sizeof((__src__)->metadata));                    \
+} while(0)
+
 #define FLOCK_GROUP_VIEW_LOCK(view) do {                       \
     ABT_mutex_lock(ABT_MUTEX_MEMORY_GET_HANDLE(&(view)->mtx)); \
 } while(0)

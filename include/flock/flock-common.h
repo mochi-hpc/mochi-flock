@@ -49,10 +49,10 @@ typedef enum flock_return_t {
  * @param void* User-provided context
  * @param flock_update_t Update type
  * @param size_t Rank of the member
- * @param hg_addr_t Address of the member
+ * @param const char* Address of the member
  * @param uint16_t Provider ID of the member
  */
-typedef void (*flock_membership_update_fn)(void*, flock_update_t, size_t, hg_addr_t, uint16_t);
+typedef void (*flock_membership_update_fn)(void*, flock_update_t, size_t, const char*, uint16_t);
 
 /**
  * @brief Type of function called when a key/value pair in the metadata of
@@ -64,7 +64,7 @@ typedef void (*flock_membership_update_fn)(void*, flock_update_t, size_t, hg_add
  * @param const char* Metadata value
  * @param size_t Size of the metadata value
  */
-typedef void (*flock_metadata_update_fn)(void*, const char*, size_t, const char*, size_t);
+typedef void (*flock_metadata_update_fn)(void*, const char*, const char*);
 
 #ifdef __cplusplus
 }
