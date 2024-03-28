@@ -10,6 +10,7 @@
 #include <flock/flock-group.h>
 #include <stdexcept>
 #include <vector>
+#include <iostream>
 
 struct TestGroup {
 
@@ -31,26 +32,31 @@ struct TestGroup {
             throw std::runtime_error("margo_addr_to_string failed when creating TestGroup");
         margo_addr_free(mid, addr);
 
-        // create the initial group view to bootstrap with
-        flock_group_view_t initial_view = FLOCK_GROUP_VIEW_INITIALIZER;
-        for(size_t i = 0; i < group_size; ++i)
-            flock_group_view_add_member(&initial_view, i, (uint16_t)(i+1), address);
-
-        // add some metadata
-        flock_group_view_add_metadata(&initial_view, "matthieu", "dorier");
-        flock_group_view_add_metadata(&initial_view, "shane", "snyder");
-
         // register flock providers
         providers.resize(group_size, nullptr);
-        struct flock_provider_args args = FLOCK_PROVIDER_ARGS_INIT;
-        args.initial_view = &initial_view;
         for(size_t i = 0; i < group_size; ++i) {
+            // IMPORTANT: flock_provider_register will take ownerwhip of the view
+            // we are creating, so we have to re-create it for every provider
+
+            // create the initial group view to bootstrap with
+            flock_group_view_t initial_view = FLOCK_GROUP_VIEW_INITIALIZER;
+            for(size_t j = 0; j < group_size; ++j)
+                flock_group_view_add_member(&initial_view, j, (uint16_t)(j+1), address);
+
+            // add some metadata
+            flock_group_view_add_metadata(&initial_view, "matthieu", "dorier");
+            flock_group_view_add_metadata(&initial_view, "shane", "snyder");
+
+            struct flock_provider_args args = FLOCK_PROVIDER_ARGS_INIT;
+            args.initial_view = &initial_view;
+
             flock_return_t ret = flock_provider_register(
-                mid, i+1, provider_config, &args,
-                &providers[i]);
+                    mid, i+1, provider_config, &args,
+                    &providers[i]);
             if(ret != FLOCK_SUCCESS)
                 throw std::runtime_error("flock_provider_register failed when initializing TestGroup");
         }
+
     }
 
     virtual ~TestGroup() {

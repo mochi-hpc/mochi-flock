@@ -81,6 +81,7 @@ flock_return_t flock_group_handle_release(flock_group_handle_t handle)
     handle->refcount -= 1;
     if(handle->refcount == 0) {
         margo_addr_free(handle->client->mid, handle->addr);
+        flock_group_view_clear(&handle->view);
         handle->client->num_group_handles -= 1;
         free(handle);
     }
@@ -303,13 +304,6 @@ finish:
     return ret;
 }
 
-static inline bool metadata_to_json(void* ctx, const char* key, const char* value)
-{
-    struct json_object* map = (struct json_object*)ctx;
-    json_object_object_add(map, key, json_object_new_string(value));
-    return true;
-}
-
 flock_return_t flock_group_serialize(
         flock_group_handle_t handle,
         void (*serializer)(void*, const char*, size_t),
@@ -368,8 +362,12 @@ flock_return_t flock_group_size(
     // group. The size of the group is defined as R+1 where R is
     // the maximum rank found in the group.
     FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
-    flock_member_t* last_member = handle->view.members.data + handle->view.members.size;
-    *size = last_member->rank + 1;
+    if(handle->view.members.size == 0) {
+        *size = 0;
+    } else {
+        flock_member_t* last_member = &handle->view.members.data[handle->view.members.size-1];
+        *size = last_member->rank + 1;
+    }
     FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
     return FLOCK_SUCCESS;
 }
@@ -416,7 +414,7 @@ flock_return_t flock_group_member_get_address_string(
         return FLOCK_ERR_NO_MEMBER;
     }
     *address = strdup(member->address);
-    FLOCK_GROUP_VIEW_LOCK(&handle->view);
+    FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
     return FLOCK_SUCCESS;
 }
 

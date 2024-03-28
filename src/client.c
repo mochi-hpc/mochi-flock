@@ -46,7 +46,7 @@ struct flock_request {
     margo_request        request;
     hg_handle_t          rpc_handle;
     flock_group_handle_t group_handle;
-    flock_return_t (*completion_cb)(flock_request_t req);
+    flock_return_t (*on_completion)(flock_request_t req);
 };
 
 static flock_return_t flock_group_update_view_cb(flock_request_t req)
@@ -61,6 +61,9 @@ static flock_return_t flock_group_update_view_cb(flock_request_t req)
         goto finish;
     }
     ret = out.ret;
+
+    fprintf(stderr, "Received a group view with %lu members and %lu metadata\n",
+            out.view.members.size, out.view.metadata.size);
 
     FLOCK_GROUP_VIEW_LOCK(&req->group_handle->view);
     flock_group_view_clear(&req->group_handle->view);
@@ -89,7 +92,7 @@ flock_return_t flock_group_update_view(
     flock_request_t tmp_req = (flock_request_t)calloc(1, sizeof(*tmp_req));
     tmp_req->rpc_handle = h;
     tmp_req->group_handle = handle;
-    tmp_req->completion_cb = flock_group_update_view_cb;
+    tmp_req->on_completion = flock_group_update_view_cb;
 
     hret = margo_provider_iforward(handle->provider_id, h, NULL, &tmp_req->request);
     if(hret != HG_SUCCESS) {
@@ -101,7 +104,7 @@ flock_return_t flock_group_update_view(
         *req = tmp_req;
         return FLOCK_SUCCESS;
     } else {
-        return flock_group_update_view_cb(tmp_req);
+        return flock_request_wait(tmp_req);
     }
 }
 
@@ -123,4 +126,20 @@ flock_return_t flock_group_unsubscribe(
 {
     (void)handle;
     return FLOCK_ERR_OP_UNSUPPORTED;
+}
+
+flock_return_t flock_request_wait(flock_request_t req)
+{
+    hg_return_t hret = margo_wait(req->request);
+    if(hret != HG_SUCCESS) return FLOCK_ERR_FROM_MERCURY;
+    return (req->on_completion)(req);
+}
+
+flock_return_t flock_request_test(flock_request_t req, bool* completed)
+{
+    int flag;
+    hg_return_t hret = margo_test(req->request, &flag);
+    if(hret != HG_SUCCESS) return FLOCK_ERR_FROM_MERCURY;
+    *completed = flag;
+    return FLOCK_SUCCESS;
 }

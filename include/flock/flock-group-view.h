@@ -63,14 +63,14 @@ MERCURY_GEN_PROC(flock_metadata_t,
 typedef struct {
     // Dynamic array of members (sorted by rank)
     struct {
-        size_t          size;
-        size_t          capacity;
+        uint64_t        size;
+        uint64_t        capacity;
         flock_member_t* data;
     } members;
     // Dynamic array of key/value pairs (sorted by keys)
     struct {
-        size_t            size;
-        size_t            capacity;
+        uint64_t          size;
+        uint64_t          capacity;
         flock_metadata_t* data;
     } metadata;
     ABT_mutex_memory mtx;
@@ -114,6 +114,7 @@ static inline void flock_group_view_clear(flock_group_view_t *view)
         free(view->members.data[i].address);
     }
     free(view->members.data);
+    view->members.data     = NULL;
     view->members.capacity = 0;
     view->members.size     = 0;
 
@@ -122,6 +123,7 @@ static inline void flock_group_view_clear(flock_group_view_t *view)
         free(view->metadata.data[i].value);
     }
     free(view->metadata.data);
+    view->metadata.data     = NULL;
     view->metadata.capacity = 0;
     view->metadata.size     = 0;
 }
@@ -280,9 +282,9 @@ static inline ssize_t flock_group_view_metadata_binary_search(
  * @brief Add a metadata to the view. If a metadata with the same
  * key already exists, its value will be replaced.
  *
- * @param view View in which to add the member.
- * @param rank Rank of the new member.
- * @param provider_id Provider ID of the new member.
+ * @param view View in which to add the metadata.
+ * @param rank Rank of the new metadata.
+ * @param provider_id Provider ID of the new metadata.
  * @param address Address of the new member.
  *
  * @return true if added, false in case of allocation error.
@@ -327,15 +329,15 @@ static inline bool flock_group_view_add_metadata(
         return false;
     }
 
-    // Shift elements to make space for the new member
+    // Shift elements to make space for the new metadata
     memmove(&view->metadata.data[pos+1], &view->metadata.data[pos],
             (view->metadata.size - pos) * sizeof(flock_metadata_t));
 
-    // Insert the new member
+    // Insert the new metadata
     view->metadata.data[pos].key   = tmp_key;
     view->metadata.data[pos].value = tmp_value;
 
-    ++view->members.size;
+    ++view->metadata.size;
 
     return true;
 }
@@ -346,7 +348,7 @@ static inline bool flock_group_view_add_metadata(
  * @param view View from which to remove the metadata.
  * @param rank Key of the metadata to remove.
  *
- * @return true if the member was removed, false if it wasn't found.
+ * @return true if the metadata was removed, false if it wasn't found.
  */
 static inline bool flock_group_view_remove_metadata(flock_group_view_t *view, const char* key)
 {
@@ -358,10 +360,10 @@ static inline bool flock_group_view_remove_metadata(flock_group_view_t *view, co
     free(view->metadata.data[idx].value);
 
     // Shift elements to remove the member
-    memmove(&view->members.data[idx], &view->members.data[idx + 1],
-            (view->members.size - idx - 1) * sizeof(flock_member_t));
+    memmove(&view->metadata.data[idx], &view->metadata.data[idx + 1],
+            (view->metadata.size - idx - 1) * sizeof(flock_metadata_t));
 
-    --view->members.size;
+    --view->metadata.size;
 
     return true;
 }
@@ -413,7 +415,11 @@ static inline hg_return_t hg_proc_flock_group_view_t(hg_proc_t proc, flock_group
         view->metadata.capacity = view->metadata.size;
     }
     for(size_t i = 0; i < view->members.size; ++i) {
+        ret = hg_proc_uint64_t(proc, &view->members.data[i].rank);
+        if(ret != HG_SUCCESS) return ret;
         ret = hg_proc_hg_string_t(proc, &view->members.data[i].address);
+        if(ret != HG_SUCCESS) return ret;
+        ret = hg_proc_uint16_t(proc, &view->members.data[i].provider_id);
         if(ret != HG_SUCCESS) return ret;
     }
     for(size_t i = 0; i < view->metadata.size; ++i) {
