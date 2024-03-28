@@ -62,9 +62,6 @@ static flock_return_t flock_group_update_view_cb(flock_request_t req)
     }
     ret = out.ret;
 
-    fprintf(stderr, "Received a group view with %lu members and %lu metadata\n",
-            out.view.members.size, out.view.metadata.size);
-
     FLOCK_GROUP_VIEW_LOCK(&req->group_handle->view);
     flock_group_view_clear(&req->group_handle->view);
     FLOCK_GROUP_VIEW_MOVE(&out.view, &req->group_handle->view);

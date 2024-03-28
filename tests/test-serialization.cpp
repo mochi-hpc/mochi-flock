@@ -38,19 +38,19 @@ TEST_CASE("Test group handle serialization and deserialization", "[serialization
     // create test group with 5 processes
     auto group = std::make_unique<TestGroup>(context->mid, 5);
 
-    SECTION("Create client and group handle, serialize and deserialize the group") {
-        flock_client_t client;
-        flock_return_t ret;
-        // create a client object
-        ret = flock_client_init(context->mid, ABT_POOL_NULL, &client);
-        REQUIRE(ret == FLOCK_SUCCESS);
+    flock_client_t client;
+    flock_return_t ret;
+    // create a client object
+    ret = flock_client_init(context->mid, ABT_POOL_NULL, &client);
+    REQUIRE(ret == FLOCK_SUCCESS);
 
-        flock_group_handle_t rh1;
-        // create a group handle
-        ret = flock_group_handle_create(client,
-                context->addr, 1, FLOCK_MODE_INIT_UPDATE, &rh1);
-        REQUIRE(ret == FLOCK_SUCCESS);
+    flock_group_handle_t rh1;
+    // create a group handle
+    ret = flock_group_handle_create(client,
+            context->addr, 1, FLOCK_MODE_INIT_UPDATE, &rh1);
+    REQUIRE(ret == FLOCK_SUCCESS);
 
+    SECTION("Serialize and deserialize the group to/from a string") {
         // serialize it
         std::string serialized;
         ret = flock_group_serialize(rh1,
@@ -136,9 +136,95 @@ TEST_CASE("Test group handle serialization and deserialization", "[serialization
         // destroy the group handle
         ret = flock_group_handle_release(rh);
         REQUIRE(ret == FLOCK_SUCCESS);
+    }
 
-        // test that we can free the client object
-        ret = flock_client_finalize(client);
+    SECTION("Serialize and deserialize the group to/from a file") {
+        // serialize it
+        std::string filename = "tmp-group." + std::to_string(time(nullptr));
+        ret = flock_group_serialize_to_file(rh1, filename.c_str());
+        REQUIRE(ret == FLOCK_SUCCESS);
+
+        // destroy original group handle
+        ret = flock_group_handle_release(rh1);
+        REQUIRE(ret == FLOCK_SUCCESS);
+
+        // deserialize it
+        flock_group_handle_t rh;
+        ret = flock_group_handle_create_from_file(client, filename.c_str(), 0, &rh);
+        REQUIRE(ret == FLOCK_SUCCESS);
+
+        // destroy the file
+        remove(filename.c_str());
+
+        // test flock_group_size
+        size_t group_size = 0;
+        ret = flock_group_size(rh, &group_size);
+        REQUIRE(ret == FLOCK_SUCCESS);
+        REQUIRE(group_size == 5);
+
+        // test flock_group_live_member_count
+        size_t count = 0;
+        ret = flock_group_live_member_count(rh, &count);
+        REQUIRE(ret == FLOCK_SUCCESS);
+        REQUIRE(count == 5);
+
+        // test iterate over members
+        std::vector<std::tuple<size_t, std::string, uint16_t>> members;
+        ret = flock_group_member_iterate(rh,
+            [](void* u, size_t rank, const char* address, uint16_t provider_id) -> bool {
+                auto members_found = static_cast<decltype(members)*>(u);
+                members_found->push_back({rank, address, provider_id});
+                return true;
+            }, &members);
+        REQUIRE(ret == FLOCK_SUCCESS);
+        REQUIRE(members.size() == 5);
+        for(size_t i = 0; i < members.size(); ++i) {
+            REQUIRE(std::get<0>(members[i]) == i);
+            REQUIRE(!std::get<1>(members[i]).empty());
+            REQUIRE(std::get<2>(members[i]) == i+1);
+        }
+
+        // test getting addresses and provider IDs with correct ranks
+        for(size_t i = 0; i < 5; ++i) {
+            hg_addr_t addr = HG_ADDR_NULL;
+            ret = flock_group_member_get_address(rh, i, &addr);
+            REQUIRE(ret == FLOCK_SUCCESS);
+            REQUIRE(addr != HG_ADDR_NULL);
+            margo_addr_free(context->mid, addr);
+
+            char* address = NULL;
+            ret = flock_group_member_get_address_string(rh, i, &address);
+            REQUIRE(ret == FLOCK_SUCCESS);
+            REQUIRE(address != NULL);
+            free(address);
+
+            uint16_t provider_id = 0;
+            ret = flock_group_member_get_provider_id(rh, i, &provider_id);
+            REQUIRE(ret == FLOCK_SUCCESS);
+            REQUIRE(provider_id == i+1);
+        }
+
+        // test iterate over metadata
+        std::unordered_map<std::string, std::string> metadata;
+        ret = flock_group_metadata_iterate(rh,
+            [](void* u, const char* key, const char* value) -> bool {
+                auto md = static_cast<decltype(metadata)*>(u);
+                md->insert({key, value});
+                return true;
+            }, &metadata);
+        REQUIRE(ret == FLOCK_SUCCESS);
+        REQUIRE(metadata.size() == 2);
+        REQUIRE(metadata.count("matthieu") == 1);
+        REQUIRE(metadata["matthieu"] == "dorier");
+        REQUIRE(metadata.count("shane") == 1);
+        REQUIRE(metadata["shane"] == "snyder");
+
+        // destroy the group handle
+        ret = flock_group_handle_release(rh);
         REQUIRE(ret == FLOCK_SUCCESS);
     }
+
+    // test that we can free the client object
+    ret = flock_client_finalize(client);
+    REQUIRE(ret == FLOCK_SUCCESS);
 }

@@ -135,6 +135,19 @@ flock_return_t flock_group_serialize(
         void* context);
 
 /**
+ * @brief Serialize the current group handle to a file.
+ * If the file exists, it will be overwritten.
+ *
+ * @param handle Group handle
+ * @param filename File name.
+ *
+ * @return FLOCK_SUCCESS or error code defined in flock-common.h
+ */
+flock_return_t flock_group_serialize_to_file(
+        flock_group_handle_t handle,
+        const char* filename);
+
+/**
  * @brief Get the size of the group.
  *
  * @warning The size of the group is NOT the current number of processes,
