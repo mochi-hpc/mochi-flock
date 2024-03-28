@@ -499,13 +499,14 @@ flock_return_t flock_group_metadata_access(
           flock_metadata_access_fn access_fn,
           void* context)
 {
-
+    flock_return_t ret = FLOCK_SUCCESS;
     if(!access_fn) return FLOCK_SUCCESS;
     FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
     const char* value = flock_group_view_find_metadata(&handle->view, key);
-    access_fn(context, key, value);
+    if(value) access_fn(context, key, value);
+    else ret = FLOCK_ERR_NO_METADATA;
     FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
-    return FLOCK_SUCCESS;
+    return ret;
 }
 
 flock_return_t flock_group_metadata_set(

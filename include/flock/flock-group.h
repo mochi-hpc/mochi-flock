@@ -294,7 +294,7 @@ flock_return_t flock_group_metadata_iterate(
  * the key/value pair to the provided access function.
  *
  * If no value is found associated with the specified key,
- * the callback will be called with NULL as the value.
+ * this function will return FLOCK_ERR_NO_METADATA.
  *
  * @param handle Group handle
  * @param key Metadata key

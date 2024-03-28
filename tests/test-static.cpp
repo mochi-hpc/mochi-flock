@@ -141,6 +141,21 @@ TEST_CASE("Test group handle for static group", "[static]") {
         REQUIRE(metadata.count("shane") == 1);
         REQUIRE(metadata["shane"] == "snyder");
 
+        // access metadata individually
+        bool found = false;
+        ret = flock_group_metadata_access(rh, "matthieu",
+                [](void* u, const char*, const char* val) {
+                    bool* b = static_cast<bool*>(u);
+                    *b = val && std::string{val} == "dorier";
+                    return true;
+                }, &found);
+        REQUIRE(ret == FLOCK_SUCCESS);
+        REQUIRE(found);
+
+        ret = flock_group_metadata_access(rh, "abcd",
+                [](void*, const char*, const char*) { return true; }, nullptr);
+        REQUIRE(ret == FLOCK_ERR_NO_METADATA);
+
         // destroy the group handle
         ret = flock_group_handle_release(rh);
         REQUIRE(ret == FLOCK_SUCCESS);
