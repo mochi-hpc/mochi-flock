@@ -321,6 +321,8 @@ flock_return_t flock_group_serialize(
             "address", json_object_new_string(handle->view.members.data[i].address));
         json_object_object_add(member,
             "provider_id", json_object_new_uint64(handle->view.members.data[i].provider_id));
+        json_object_object_add(member,
+            "rank", json_object_new_uint64(handle->view.members.data[i].rank));
         json_object_array_add(members, member);
     }
 
@@ -340,7 +342,7 @@ flock_return_t flock_group_serialize(
     json_object_object_add(view, "metadata", metadata);
 
     size_t len;
-    const char* str = json_object_to_json_string_length(view, 0, &len);
+    const char* str = json_object_to_json_string_length(view, JSON_C_TO_STRING_NOSLASHESCAPE, &len);
     if(!str) {
         FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
         return FLOCK_ERR_ALLOCATION;
