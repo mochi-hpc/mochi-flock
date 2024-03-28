@@ -9,6 +9,7 @@
 
 /* backends that we want to add at compile time */
 #include "static/static-backend.h"
+#include "centralized/centralized-backend.h"
 /* Note: other backends can be added dynamically using
  * flock_register_backend */
 
@@ -114,6 +115,7 @@ flock_return_t flock_provider_register(
 
     /* add backends available at compiler time (e.g. default/static backends) */
     flock_register_static_backend(); // function from "static/static-backend.h"
+    flock_register_centralized_backend(); // function from "centralized/centralized-backend.h"
     /* FIXME: add other backend registrations here */
     /* ... */
 
@@ -177,6 +179,8 @@ flock_return_t flock_provider_register(
         margo_error(mid, "[flock] Could not create group, backend returned %d", ret);
         goto finish;
     }
+
+    flock_group_view_clear(&backend_init_args.initial_view);
 
     /* set the provider's group */
     p->group = malloc(sizeof(*(p->group)));

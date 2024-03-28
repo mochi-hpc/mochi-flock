@@ -6,8 +6,9 @@ set (client-src-files
      client.c
      group-handle.c)
 
-set (static-src-files
-     static/static-backend.c)
+set (backend-src-files
+     static/static-backend.c
+     centralized/centralized-backend.c)
 
 set (bedrock-module-src-files
      bedrock-module.c)
@@ -21,21 +22,6 @@ set (flock-pkg "share/cmake/flock")
 # set version fo shared library
 set (flock-vers "${FLOCK_VERSION_MAJOR}.${FLOCK_VERSION_MINOR}")
 
-# server library
-add_library (flock-server ${server-src-files} ${static-src-files})
-add_library (flock::server ALIAS flock-server)
-target_link_libraries (flock-server
-    PUBLIC PkgConfig::margo
-    PRIVATE coverage_config PkgConfig::json-c)
-target_include_directories (flock-server PUBLIC $<INSTALL_INTERFACE:include>)
-target_include_directories (flock-server BEFORE PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>)
-target_include_directories (flock-server BEFORE PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
-set_target_properties (flock-server
-    PROPERTIES VERSION ${FLOCK_VERSION}
-    SOVERSION ${FLOCK_VERSION_MAJOR})
-
 # client library
 add_library (flock-client ${client-src-files})
 add_library (flock::client ALIAS flock-client)
@@ -48,6 +34,21 @@ target_include_directories (flock-client BEFORE PUBLIC
 target_include_directories (flock-client BEFORE PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
 set_target_properties (flock-client
+    PROPERTIES VERSION ${FLOCK_VERSION}
+    SOVERSION ${FLOCK_VERSION_MAJOR})
+
+# server library
+add_library (flock-server ${server-src-files} ${backend-src-files})
+add_library (flock::server ALIAS flock-server)
+target_link_libraries (flock-server
+    PUBLIC PkgConfig::margo
+    PRIVATE coverage_config PkgConfig::json-c flock-client)
+target_include_directories (flock-server PUBLIC $<INSTALL_INTERFACE:include>)
+target_include_directories (flock-server BEFORE PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>)
+target_include_directories (flock-server BEFORE PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+set_target_properties (flock-server
     PROPERTIES VERSION ${FLOCK_VERSION}
     SOVERSION ${FLOCK_VERSION_MAJOR})
 

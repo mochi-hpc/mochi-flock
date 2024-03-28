@@ -7,6 +7,6 @@ Name: flock-server
 Description: <insert description here>
 Version: @FLOCK_VERSION@
 
-Requires: margo
+Requires: margo flock-client
 Libs: -L${libdir} @SERVER_PRIVATE_LIBS@
 Cflags: -I${includedir}
