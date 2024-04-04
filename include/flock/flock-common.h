@@ -35,6 +35,7 @@ typedef enum flock_return_t {
     FLOCK_ERR_INVALID_CONFIG,    /* Invalid configuration */
     FLOCK_ERR_FROM_MERCURY,      /* Mercurt error */
     FLOCK_ERR_FROM_ARGOBOTS,     /* Argobots error */
+    FLOCK_ERR_FROM_MPI,          /* MPI error */
     FLOCK_ERR_OP_UNSUPPORTED,    /* Unsupported operation */
     FLOCK_ERR_OP_FORBIDDEN,      /* Forbidden operation */
     FLOCK_ERR_NO_MEMBER,         /* No member at this rank */

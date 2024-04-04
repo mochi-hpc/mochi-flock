@@ -5,6 +5,7 @@ spack:
   - mochi-margo
   - json-c
   - mochi-bedrock
+  - mpi
   concretizer:
     unify: true
     reuse: true

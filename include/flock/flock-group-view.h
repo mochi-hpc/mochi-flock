@@ -16,6 +16,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * @file flock-group-view.h
  *
@@ -598,6 +602,10 @@ static inline hg_return_t hg_proc_flock_protected_group_view_t(hg_proc_t proc, f
     FLOCK_GROUP_VIEW_UNLOCK(view);
     return hret;
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* FLOCK_GROUP_VIEW_H */
 
