@@ -16,7 +16,11 @@
 
 /* Client RPC types */
 
+MERCURY_GEN_PROC(get_view_in_t,
+        ((uint64_t)(digest)))
+
 MERCURY_GEN_PROC(get_view_out_t,
+        ((uint8_t)(no_change))\
         ((flock_group_view_t)(view))\
         ((int32_t)(ret)))
 

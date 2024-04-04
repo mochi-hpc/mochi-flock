@@ -45,8 +45,6 @@ static flock_return_t centralized_create_group(
     ctx->is_primary = (primary_member->provider_id == args->provider_id)
                    && (strcmp(primary_member->address, self_address_string) == 0);
 
-    FLOCK_GROUP_VIEW_MOVE(&args->initial_view, &ctx->view);
-
     flock_return_t ret = flock_client_init(mid, args->pool, &ctx->client);
     if(ret != FLOCK_SUCCESS) {
         centralized_destroy_group(ctx);
@@ -70,6 +68,8 @@ static flock_return_t centralized_create_group(
     }
 
     ctx->config = json_object_new_object();
+
+    FLOCK_GROUP_VIEW_MOVE(&args->initial_view, &ctx->view);
 
     *context = ctx;
     return FLOCK_SUCCESS;

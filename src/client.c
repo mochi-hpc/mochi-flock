@@ -24,7 +24,7 @@ flock_return_t flock_client_init(margo_instance_id mid, ABT_pool pool, flock_cli
     if(flag == HG_TRUE) {
         margo_registered_name(mid, "flock_get_view", &c->get_view_id, &flag);
     } else {
-        c->get_view_id = MARGO_REGISTER(mid, "flock_get_view", void, get_view_out_t, NULL);
+        c->get_view_id = MARGO_REGISTER(mid, "flock_get_view", get_view_in_t, get_view_out_t, NULL);
     }
 
     *client = c;
@@ -62,10 +62,12 @@ static flock_return_t flock_group_update_view_cb(flock_request_t req)
     }
     ret = out.ret;
 
-    FLOCK_GROUP_VIEW_LOCK(&req->group_handle->view);
-    flock_group_view_clear(&req->group_handle->view);
-    FLOCK_GROUP_VIEW_MOVE(&out.view, &req->group_handle->view);
-    FLOCK_GROUP_VIEW_UNLOCK(&req->group_handle->view);
+    if(!out.no_change) {
+        FLOCK_GROUP_VIEW_LOCK(&req->group_handle->view);
+        flock_group_view_clear(&req->group_handle->view);
+        FLOCK_GROUP_VIEW_MOVE(&out.view, &req->group_handle->view);
+        FLOCK_GROUP_VIEW_UNLOCK(&req->group_handle->view);
+    }
 
     margo_free_output(req->rpc_handle, &out);
 
@@ -91,7 +93,10 @@ flock_return_t flock_group_update_view(
     tmp_req->group_handle = handle;
     tmp_req->on_completion = flock_group_update_view_cb;
 
-    hret = margo_provider_iforward(handle->provider_id, h, NULL, &tmp_req->request);
+    get_view_in_t in;
+    in.digest = handle->view.digest;
+
+    hret = margo_provider_iforward(handle->provider_id, h, &in, &tmp_req->request);
     if(hret != HG_SUCCESS) {
         margo_destroy(h);
         return FLOCK_ERR_FROM_MERCURY;

@@ -59,6 +59,20 @@ MERCURY_GEN_PROC(flock_metadata_t,
 
 /**
  * @brief Group view.
+ *
+ * A group view contains a dynamic array of members (flock_member_t),
+ * a dynamic array of metadata (flock_metadata_t), a digest, and a
+ * mutex to protect access to the view's fields.
+ *
+ * Important: while the fields can be read without the need for the
+ * bellow flock_* functions and FLOCK_* macros, they SHOULD NOT BE
+ * MODIFIED without calling these functions/macros. This is because
+ * (1) these functions also keep the digest up-to-date when the view is
+ * modified, and (2) these functions also ensure some invariants on
+ * the content of the view, such as the fact that members are sorted
+ * by rank, ranks are unique, metadata are sorted by key, keys are unique,
+ * and so on. Any direct modification of these fields risk breaking these
+ * invariants.
  */
 typedef struct {
     // Dynamic array of members (sorted by rank)
@@ -73,10 +87,13 @@ typedef struct {
         uint64_t          capacity;
         flock_metadata_t* data;
     } metadata;
+    // Digest of the group's content
+    uint64_t digest;
+    // Mutex to protect access to the group view
     ABT_mutex_memory mtx;
 } flock_group_view_t;
 
-#define FLOCK_GROUP_VIEW_INITIALIZER {{0,0,NULL},{0,0,NULL},ABT_MUTEX_INITIALIZER}
+#define FLOCK_GROUP_VIEW_INITIALIZER {{0,0,NULL},{0,0,NULL},0,ABT_MUTEX_INITIALIZER}
 
 /**
  * @brief This macro takes two pointers to flock_group_view_t and moves
@@ -89,10 +106,12 @@ typedef struct {
  * @param __dst__ flock_group_view_t* into which to move.
  */
 #define FLOCK_GROUP_VIEW_MOVE(__src__, __dst__) do {                                 \
+    (__dst__)->digest = (__src__)->digest;                                           \
     memcpy(&(__dst__)->members, &(__src__)->members, sizeof((__src__)->members));    \
     memcpy(&(__dst__)->metadata, &(__src__)->metadata, sizeof((__src__)->metadata)); \
     memset(&(__src__)->members, 0, sizeof((__src__)->members));                      \
     memset(&(__src__)->metadata, 0, sizeof((__src__)->metadata));                    \
+    (__src__)->digest = 0;                                                           \
 } while(0)
 
 #define FLOCK_GROUP_VIEW_LOCK(view) do {                       \
@@ -126,6 +145,8 @@ static inline void flock_group_view_clear(flock_group_view_t *view)
     view->metadata.data     = NULL;
     view->metadata.capacity = 0;
     view->metadata.size     = 0;
+
+    view->digest = 0;
 }
 
 /**
@@ -154,6 +175,69 @@ static inline ssize_t flock_group_view_members_binary_search(
     return -1; // Rank not found
 }
 
+
+/**
+ * @brief This function is used to compute string hashes to
+ * update a group view's digest.
+ *
+ * @param str string to hash.
+ *
+ * @return a uint64_t hash.
+ */
+static inline uint64_t flock_djb2_hash(const char *str)
+{
+    uint64_t hash = 5381;
+    int c;
+
+    while((c = *str++))
+        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+
+    return hash;
+}
+
+/**
+ * @brief This function is used to compute hashes to
+ * update a group view's digest when a member is added
+ * or removed.
+ *
+ * @param rank Member rank.
+ * @param provider_id Member provider ID.
+ * @param address Member address.
+ *
+ * @return a uint64_t hash.
+ */
+static inline uint64_t flock_hash_member(
+    uint64_t rank,
+    uint16_t provider_id,
+    const char *address)
+{
+    uint64_t hash = flock_djb2_hash(address);
+    for(unsigned i=0; i < sizeof(rank); ++i)
+        hash = ((hash << 5) + hash) + ((char*)&rank)[i];
+    for(unsigned i=0; i < sizeof(provider_id); ++i)
+        hash = ((hash << 5) + hash) + ((char*)&provider_id)[i];
+    return hash;
+}
+
+/**
+ * @brief This function is used to compute metadata hashes to
+ * update a group view's digest when a metadata is updated.
+ *
+ * @param key Key of the metadata to hash.
+ * @param val Value of the metadata to hash.
+ *
+ * @return a uint64_t hash.
+ */
+static inline uint64_t flock_hash_metadata(const char *key, const char *val)
+{
+    uint64_t kh = flock_djb2_hash(key);
+    uint64_t vh = flock_djb2_hash(val);
+    // To avoid the (key,value) pair to be equivalent to the (value,key) pair,
+    // we rotate the value's hash by 3 bytes
+    vh = (vh << 3) | (vh >> ((sizeof(vh) * CHAR_BIT - 3) % (sizeof(vh) * CHAR_BIT)));
+    return kh ^ vh;
+}
+
 /**
  * @brief Add a member to the view.
  *
@@ -173,6 +257,9 @@ static inline bool flock_group_view_add_member(
         uint16_t provider_id,
         const char *address)
 {
+    // Compute the new member's hash
+    uint64_t member_hash = flock_hash_member(rank, provider_id, address);
+
     // Check if there is enough capacity, if not, resize
     if (view->members.size == view->members.capacity) {
         if (view->members.capacity == 0)
@@ -206,6 +293,9 @@ static inline bool flock_group_view_add_member(
 
     ++view->members.size;
 
+    // Update digest
+    view->digest ^= member_hash;
+
     return true;
 }
 
@@ -222,6 +312,12 @@ static inline bool flock_group_view_remove_member(flock_group_view_t *view, uint
     ssize_t idx = flock_group_view_members_binary_search(view, rank);
     if (idx == -1) return false;
 
+    // Compute the hash of the member to remove
+    uint64_t member_hash = flock_hash_member(
+            view->members.data[idx].rank,
+            view->members.data[idx].provider_id,
+            view->members.data[idx].address);
+
     // Free the memory allocated for the address
     free(view->members.data[idx].address);
 
@@ -230,6 +326,9 @@ static inline bool flock_group_view_remove_member(flock_group_view_t *view, uint
             (view->members.size - idx - 1) * sizeof(flock_member_t));
 
     --view->members.size;
+
+    // Update digest
+    view->digest ^= member_hash;
 
     return true;
 }
@@ -294,11 +393,19 @@ static inline bool flock_group_view_add_metadata(
         const char* key,
         const char* value)
 {
+    // Compute the hash of the key and value
+    uint64_t metadata_hash = flock_hash_metadata(key, value);
+
     // Try to find existing entry
     ssize_t idx = flock_group_view_metadata_binary_search(view, key);
     if (idx != -1) {
+        // Compute old metadata hash
+        uint64_t old_metadata_hash = flock_hash_metadata(key, view->metadata.data[idx].value);
+        // Free old value
         free(view->metadata.data[idx].value);
         view->metadata.data[idx].value = strdup(value);
+        // Update the digest
+        view->digest ^= old_metadata_hash ^ metadata_hash;
         return true;
     }
 
@@ -339,6 +446,9 @@ static inline bool flock_group_view_add_metadata(
 
     ++view->metadata.size;
 
+    // Update the digest
+    view->digest ^= metadata_hash;
+
     return true;
 }
 
@@ -355,6 +465,10 @@ static inline bool flock_group_view_remove_metadata(flock_group_view_t *view, co
     ssize_t idx = flock_group_view_metadata_binary_search(view, key);
     if (idx == -1) return false;
 
+    // Compute the hash of the key and value
+    uint64_t metadata_hash = flock_hash_metadata(
+        view->metadata.data[idx].key, view->metadata.data[idx].value);
+
     // Free the memory allocated for the key and value
     free(view->metadata.data[idx].key);
     free(view->metadata.data[idx].value);
@@ -364,6 +478,9 @@ static inline bool flock_group_view_remove_metadata(flock_group_view_t *view, co
             (view->metadata.size - idx - 1) * sizeof(flock_metadata_t));
 
     --view->metadata.size;
+
+    // Update the digest
+    view->digest ^= metadata_hash;
 
     return true;
 }
@@ -395,6 +512,8 @@ static inline const char *flock_group_view_find_metadata(const flock_group_view_
  */
 static inline hg_return_t hg_proc_flock_group_view_t(hg_proc_t proc, flock_group_view_t* view) {
     hg_return_t ret = HG_SUCCESS;
+    ret = hg_proc_uint64_t(proc, &view->digest);
+    if(ret != HG_SUCCESS) return ret;
     ret = hg_proc_hg_size_t(proc, &view->members.size);
     if(ret != HG_SUCCESS) return ret;
     ret = hg_proc_hg_size_t(proc, &view->metadata.size);

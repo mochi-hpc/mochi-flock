@@ -105,7 +105,7 @@ flock_return_t flock_provider_register(
     /* Client RPCs */
 
     id = MARGO_REGISTER_PROVIDER(mid, "flock_get_view",
-            void, get_view_out_t,
+            get_view_in_t, get_view_out_t,
             flock_get_view_ult, provider_id, p->pool);
     margo_register_data(mid, id, (void*)p, NULL);
     p->get_view_id = id;
@@ -278,9 +278,16 @@ flock_return_t flock_provider_register_backend(
 static void get_view_callback(void* uargs, const flock_group_view_t* view)
 {
     hg_handle_t handle = (hg_handle_t)uargs;
+    get_view_in_t in = {0};
+    margo_get_input(handle, &in);
     get_view_out_t out = {0};
-    out.view = *view;
+    if(in.digest == view->digest) {
+        out.no_change = 1;
+    } else {
+        out.view = *view;
+    }
     margo_respond(handle, &out);
+    margo_free_input(handle, &in);
 }
 
 static void flock_get_view_ult(hg_handle_t h)

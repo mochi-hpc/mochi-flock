@@ -47,8 +47,10 @@ TEST_CASE("Test group view interface", "[group-view]") {
         REQUIRE(view.metadata.size == 0);
         REQUIRE(view.metadata.capacity == 0);
         REQUIRE(view.metadata.data == nullptr);
+        REQUIRE(view.digest == 0);
 
         std::vector<Member> members_ref(16);
+        auto previous_digest = view.digest;
         for(size_t i = 0; i < 16; ++i) {
             char address[64];
             sprintf(address, "address/%02lu", i);
@@ -57,7 +59,9 @@ TEST_CASE("Test group view interface", "[group-view]") {
             b = flock_group_view_add_member(
                     &view, rank, provider_id, address);
             REQUIRE(b);
+            REQUIRE(view.digest != previous_digest);
             members_ref[rank] = {rank, address, provider_id};
+            previous_digest = view.digest;
         }
 
         std::unordered_map<std::string, std::string> metadata_ref;
@@ -69,7 +73,9 @@ TEST_CASE("Test group view interface", "[group-view]") {
             sprintf(value, "value_%lu", i);
             b = flock_group_view_add_metadata(&view, key, value);
             REQUIRE(b);
+            REQUIRE(view.digest != previous_digest);
             metadata_ref.insert({key,value});
+            previous_digest = view.digest;
         }
 
         REQUIRE(view.members.size == 16);
@@ -100,12 +106,15 @@ TEST_CASE("Test group view interface", "[group-view]") {
         REQUIRE(value == nullptr);
 
         // Try to remove a rank that does not exist
+        previous_digest = view.digest;
         b = flock_group_view_remove_member(&view, view.members.size);
         REQUIRE(!b);
+        REQUIRE(previous_digest == view.digest);
 
         // Remove rank 5
         b = flock_group_view_remove_member(&view, 5);
         REQUIRE(b);
+        REQUIRE(previous_digest != view.digest);
 
         REQUIRE(view.members.size == 15);
 
@@ -122,13 +131,16 @@ TEST_CASE("Test group view interface", "[group-view]") {
         }
 
         // Try to remove a metadata that does not exist
+        previous_digest = view.digest;
         b = flock_group_view_remove_metadata(&view, "abcd");
         REQUIRE(!b);
+        REQUIRE(previous_digest == view.digest);
 
         // Remove a metadata that does exist
         auto key_to_remove = metadata_ref.begin()->first;
         b = flock_group_view_remove_metadata(&view, key_to_remove.c_str());
         REQUIRE(b);
+        REQUIRE(previous_digest != view.digest);
 
         for(auto& p : metadata_ref) {
             const char* value = flock_group_view_find_metadata(&view, p.first.c_str());
@@ -148,6 +160,8 @@ TEST_CASE("Test group view interface", "[group-view]") {
         auto metadata_size = view.metadata.size;
         auto metadata_capa = view.metadata.capacity;
 
+        auto digest = view.digest;
+
         // Move the view to another destination
         flock_group_view_t view2 = FLOCK_GROUP_VIEW_INITIALIZER;
         FLOCK_GROUP_VIEW_MOVE(&view, &view2);
@@ -158,6 +172,7 @@ TEST_CASE("Test group view interface", "[group-view]") {
         REQUIRE(view.metadata.size == 0);
         REQUIRE(view.metadata.capacity == 0);
         REQUIRE(view.metadata.data == nullptr);
+        REQUIRE(view.digest == 0);
 
         REQUIRE(view2.members.size == members_size);
         REQUIRE(view2.members.capacity == members_capa);
@@ -165,6 +180,7 @@ TEST_CASE("Test group view interface", "[group-view]") {
         REQUIRE(view2.metadata.size == metadata_size);
         REQUIRE(view2.metadata.capacity == metadata_capa);
         REQUIRE(view2.metadata.data == metadata_data);
+        REQUIRE(view2.digest == digest);
 
         // Clear the view2
         flock_group_view_clear(&view);
@@ -176,5 +192,6 @@ TEST_CASE("Test group view interface", "[group-view]") {
         REQUIRE(view2.metadata.size == 0);
         REQUIRE(view2.metadata.capacity == 0);
         REQUIRE(view2.metadata.data == nullptr);
+        REQUIRE(view2.digest == 0);
     }
 }
