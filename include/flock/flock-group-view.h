@@ -25,21 +25,39 @@
 
 /**
  * @brief Representation of a group member.
- *
- * Will define the following structure:
- *
- * ```
- * typedef struct {
- *     uint64_t  rank;
- *     uint16_t  provider_id;
- *     char*     address;
- * } flock_member_t;
- * ```
  */
-MERCURY_GEN_PROC(flock_member_t,
-    ((uint64_t)(rank))\
-    ((uint16_t)(provider_id))\
-    ((hg_string_t)(address)))
+typedef struct {
+    uint64_t  rank;
+    uint16_t  provider_id;
+    char*     address;
+    // The fields bellow can be used by backends to associate extra data
+    // to each member in a group view. These fields are not serialized when
+    // the view is transferred. The free function, if provided will be called
+    // on the data pointer when a the member is removed from the view.
+    struct {
+        void* data;
+        void (*free)(void*);
+    } extra;
+} flock_member_t;
+
+
+/**
+ * @brief Mercury serialization/deserialization function for flock_member_t.
+ */
+static inline hg_return_t hg_proc_flock_member_t(hg_proc_t proc, flock_member_t* member) {
+    hg_return_t hret;
+    if(hg_proc_get_op(proc) == HG_DECODE) {
+        member->extra.data = NULL;
+        member->extra.free = NULL;
+    }
+    hret = hg_proc_hg_uint64_t(proc, &member->rank);
+    if(hret != HG_SUCCESS) return hret;
+    hret = hg_proc_hg_uint16_t(proc, &member->provider_id);
+    if(hret != HG_SUCCESS) return hret;
+    hret = hg_proc_hg_string_t(proc, &member->address);
+    if(hret != HG_SUCCESS) return hret;
+    return HG_SUCCESS;
+}
 
 /**
  * @brief Key/value pair.
@@ -130,7 +148,10 @@ typedef struct {
 static inline void flock_group_view_clear(flock_group_view_t *view)
 {
     for (size_t i = 0; i < view->members.size; ++i) {
-        free(view->members.data[i].address);
+        flock_member_t* member = &view->members.data[i];
+        free(member->address);
+        if(member->extra.free)
+            (member->extra.free)(member->extra.data);
     }
     free(view->members.data);
     view->members.data     = NULL;
@@ -249,7 +270,7 @@ static inline uint64_t flock_hash_metadata(const char *key, const char *val)
  * @param provider_id Provider ID of the new member.
  * @param address Address of the new member.
  *
- * @return true if added, false in case of allocation error.
+ * @return a pointer to the added flock_member_t* if successful, NULL in case of allocation error.
  */
 static inline bool flock_group_view_add_member(
         flock_group_view_t *view,
@@ -268,7 +289,7 @@ static inline bool flock_group_view_add_member(
             view->members.capacity *= 2;
         flock_member_t *temp = (flock_member_t *)realloc(
             view->members.data, view->members.capacity * sizeof(flock_member_t));
-        if (!temp) return false;
+        if (!temp) return NULL;
         view->members.data = temp;
     }
 
@@ -280,7 +301,7 @@ static inline bool flock_group_view_add_member(
 
     // Make copy of address
     char* tmp_address = strdup(address);
-    if (!tmp_address) return false;
+    if (!tmp_address) return NULL;
 
     // Shift elements to make space for the new member
     memmove(&view->members.data[pos+1], &view->members.data[pos],
@@ -290,13 +311,15 @@ static inline bool flock_group_view_add_member(
     view->members.data[pos].rank        = rank;
     view->members.data[pos].provider_id = provider_id;
     view->members.data[pos].address     = tmp_address;
+    view->members.data[pos].extra.data  = NULL;
+    view->members.data[pos].extra.free  = NULL;
 
     ++view->members.size;
 
     // Update digest
     view->digest ^= member_hash;
 
-    return true;
+    return &view->members.data[pos];
 }
 
 /**
@@ -312,14 +335,19 @@ static inline bool flock_group_view_remove_member(flock_group_view_t *view, uint
     ssize_t idx = flock_group_view_members_binary_search(view, rank);
     if (idx == -1) return false;
 
+    flock_member_t* member = &view->members.data[idx];
+
     // Compute the hash of the member to remove
     uint64_t member_hash = flock_hash_member(
-            view->members.data[idx].rank,
-            view->members.data[idx].provider_id,
-            view->members.data[idx].address);
+            member->rank,
+            member->provider_id,
+            member->address);
 
     // Free the memory allocated for the address
-    free(view->members.data[idx].address);
+    free(member->address);
+
+    // Free extra context attached by the backend
+    if(member->extra.free) (member->extra.free)(member->extra.data);
 
     // Shift elements to remove the member
     memmove(&view->members.data[idx], &view->members.data[idx + 1],
