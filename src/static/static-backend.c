@@ -23,6 +23,28 @@ static flock_return_t static_create_group(
     static_context* ctx = (static_context*)calloc(1, sizeof(*ctx));
     if(!ctx) return FLOCK_ERR_ALLOCATION;
 
+    // Check that the current process is part of the group
+    hg_addr_t addr = HG_ADDR_NULL;
+    char      addr_str[256];
+    hg_size_t addr_str_size = 256;
+    hg_return_t hret = margo_addr_self(args->mid, &addr);
+    if(hret != HG_SUCCESS) return FLOCK_ERR_FROM_MERCURY;
+    hret = margo_addr_to_string(args->mid, addr_str, &addr_str_size, addr);
+    margo_addr_free(args->mid, addr);
+    if(hret != HG_SUCCESS) return FLOCK_ERR_FROM_MERCURY;
+
+    bool found = false;
+    for(size_t i = 0; i < args->initial_view.members.size; ++i) {
+        if(args->initial_view.members.data[i].provider_id == args->provider_id
+        && strcmp(args->initial_view.members.data[i].address, addr_str) == 0) {
+            found = true;
+            break;
+        }
+    }
+
+    // Static groups don't allow joining
+    if(!found) return FLOCK_ERR_NOT_A_MEMBER;
+
     ctx->config = json_object_new_object();
     FLOCK_GROUP_VIEW_MOVE(&args->initial_view, &ctx->view);
 

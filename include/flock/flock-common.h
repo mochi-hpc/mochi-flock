@@ -40,6 +40,7 @@ typedef enum flock_return_t {
     FLOCK_ERR_OP_FORBIDDEN,      /* Forbidden operation */
     FLOCK_ERR_NO_MEMBER,         /* No member at this rank */
     FLOCK_ERR_NO_METADATA,       /* Invalid metadata key */
+    FLOCK_ERR_NOT_A_MEMBER,      /* Process is not member of the group */
     /* ... TODO add more error codes here if needed */
     FLOCK_ERR_OTHER              /* Other error */
 } flock_return_t;

@@ -551,13 +551,13 @@ static inline hg_return_t hg_proc_flock_group_view_t(hg_proc_t proc, flock_group
     ret = hg_proc_hg_size_t(proc, &view->metadata.size);
     if(ret != HG_SUCCESS) return ret;
     if(hg_proc_get_op(proc) == HG_DECODE) {
-        view->members.data = (flock_member_t*)malloc(
-            view->members.size * sizeof(view->members.data[0]));
+        view->members.data = (flock_member_t*)calloc(
+            view->members.size, sizeof(view->members.data[0]));
         if(!view->members.data) {
             return HG_NOMEM;
         }
-        view->metadata.data = (flock_metadata_t*)malloc(
-            view->metadata.size * sizeof(view->metadata.data[0]));
+        view->metadata.data = (flock_metadata_t*)calloc(
+            view->metadata.size, sizeof(view->metadata.data[0]));
         if(!view->metadata.data) {
             free(view->members.data);
             return HG_NOMEM;
