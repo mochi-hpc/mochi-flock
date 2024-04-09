@@ -51,7 +51,7 @@ struct flock_request {
 
 static flock_return_t flock_group_update_view_cb(flock_request_t req)
 {
-    get_view_out_t out;
+    get_view_out_t out = {0};
     hg_return_t hret;
     flock_return_t ret;
 

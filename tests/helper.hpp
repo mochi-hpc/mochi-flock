@@ -54,7 +54,9 @@ struct TestGroup {
                     mid, i+1, provider_config, &args,
                     &providers[i]);
             if(ret != FLOCK_SUCCESS)
-                throw std::runtime_error("flock_provider_register failed when initializing TestGroup");
+                throw std::runtime_error(
+                    "flock_provider_register failed when initializing TestGroup: code="
+                    + std::to_string(ret));
         }
 
     }

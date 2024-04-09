@@ -418,6 +418,42 @@ flock_return_t flock_group_live_member_count(
     return FLOCK_SUCCESS;
 }
 
+flock_return_t flock_group_digest(
+        flock_group_handle_t handle,
+        uint64_t* digest)
+{
+    FLOCK_GROUP_VIEW_LOCK(&handle->view);
+    *digest = handle->view.digest;
+    FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
+    return FLOCK_SUCCESS;
+}
+
+flock_return_t flock_group_get_view(
+        flock_group_handle_t handle,
+        flock_group_view_t* view)
+{
+    FLOCK_GROUP_VIEW_LOCK(&handle->view);
+    flock_group_view_clear(view);
+    view->digest            = handle->view.digest;
+    view->members.size      = handle->view.members.size;
+    view->members.capacity  = handle->view.members.capacity;
+    view->members.data      = calloc(sizeof(*view->members.data), view->members.size);
+    for(size_t i = 0; i < view->members.size; ++i) {
+        view->members.data[i].address     = strdup(handle->view.members.data[i].address);
+        view->members.data[i].provider_id = handle->view.members.data[i].provider_id;
+        view->members.data[i].rank        = handle->view.members.data[i].rank;
+    }
+    view->metadata.size     = handle->view.metadata.size;
+    view->metadata.capacity = handle->view.metadata.capacity;
+    view->metadata.data     = calloc(sizeof(*view->metadata.data), view->metadata.size);
+    for(size_t i = 0; i < view->metadata.size; ++i) {
+        view->metadata.data[i].key = strdup(handle->view.metadata.data[i].key);
+        view->metadata.data[i].value = strdup(handle->view.metadata.data[i].value);
+    }
+    FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
+    return FLOCK_SUCCESS;
+}
+
 flock_return_t flock_group_member_iterate(
           flock_group_handle_t handle,
           flock_member_access_fn access_fn,

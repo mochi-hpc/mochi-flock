@@ -11,7 +11,7 @@
 #include <mercury_proc.h>
 #include <mercury_proc_string.h>
 #include <margo.h>
-#include "flock/flock-group.h"
+#include "flock/flock-common.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -542,7 +542,10 @@ static inline const char *flock_group_view_find_metadata(const flock_group_view_
  *
  * @return hg_return_t code.
  */
-static inline hg_return_t hg_proc_flock_group_view_t(hg_proc_t proc, flock_group_view_t* view) {
+static inline hg_return_t hg_proc_flock_group_view_t(hg_proc_t proc, void* args) {
+    flock_group_view_t* view = (flock_group_view_t*)args;
+    if(hg_proc_get_op(proc) == HG_DECODE)
+        flock_group_view_clear(view);
     hg_return_t ret = HG_SUCCESS;
     ret = hg_proc_uint64_t(proc, &view->digest);
     if(ret != HG_SUCCESS) return ret;
@@ -596,7 +599,9 @@ static inline hg_return_t hg_proc_flock_group_view_t(hg_proc_t proc, flock_group
  *
  * @return hg_return_t code.
  */
-static inline hg_return_t hg_proc_flock_protected_group_view_t(hg_proc_t proc, flock_group_view_t* view) {
+static inline hg_return_t hg_proc_flock_protected_group_view_t(hg_proc_t proc, void* args) {
+    if(!args) return HG_SUCCESS;
+    flock_group_view_t* view = (flock_group_view_t*)args;
     FLOCK_GROUP_VIEW_LOCK(view);
     hg_return_t hret = hg_proc_flock_group_view_t(proc, view);
     FLOCK_GROUP_VIEW_UNLOCK(view);

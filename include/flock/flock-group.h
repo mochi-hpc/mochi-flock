@@ -8,6 +8,7 @@
 
 #include <margo.h>
 #include <flock/flock-common.h>
+#include <flock/flock-group-view.h>
 #include <flock/flock-client.h>
 
 #ifdef __cplusplus
@@ -177,6 +178,30 @@ flock_return_t flock_group_size(
 flock_return_t flock_group_live_member_count(
         flock_group_handle_t handle,
         size_t* count);
+
+/**
+ * @brief Get the current digest of the group.
+ *
+ * @param[in] handle Group handle
+ * @param[out] digest Digest
+ *
+ * @return FLOCK_SUCCESS or error code defined in flock-common.h
+ */
+flock_return_t flock_group_digest(
+        flock_group_handle_t handle,
+        uint64_t* digest);
+
+/**
+ * @brief Copy the internal view.
+ *
+ * @param[in] handle Group handle
+ * @param[out] view View
+ *
+ * @return FLOCK_SUCCESS or error code defined in flock-common.h
+ */
+flock_return_t flock_group_get_view(
+        flock_group_handle_t handle,
+        flock_group_view_t* view);
 
 /**
  * @brief Function type used to access member information.
