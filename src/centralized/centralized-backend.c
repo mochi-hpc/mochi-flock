@@ -11,6 +11,10 @@
 #include "../provider.h"
 #include "centralized-backend.h"
 
+#define PING_TIMEOUT_MS 1000.0
+#define PING_INTERVAL_MS 1000.0
+#define PING_MAX_NUM_TIMEOUTS 3
+
 /**
  * @brief The "centralized" backend uses the member with the lowest rank
  * as a centralized authority that is supposed to hold the most up to date
@@ -39,25 +43,29 @@ typedef struct member_state {
     centralized_context* context;
     hg_addr_t            address;
     uint16_t             provider_id;
-    margo_timer_t        timer;
+    margo_timer_t        ping_timer;
+    double               last_ping_timestamp;
     hg_handle_t          last_ping_handle;
     uint8_t              num_ping_timeouts;
-    _Atomic bool         need_stop;
+    ABT_mutex_memory     mtx;
 } member_state;
 
 static inline void member_state_free(void* args)
 {
     member_state* state = (member_state*)args;
-    state->need_stop = true;
+    ABT_mutex_lock(ABT_MUTEX_MEMORY_GET_HANDLE(&state->mtx));
     if(state->last_ping_handle) {
         HG_Cancel(state->last_ping_handle);
     }
-    if(state->timer) {
-        margo_timer_cancel(state->timer);
-        margo_timer_destroy(state->timer);
-        state->timer = MARGO_TIMER_NULL;
+    if(state->ping_timer) {
+        margo_timer_cancel(state->ping_timer);
+        margo_timer_destroy(state->ping_timer);
+        state->ping_timer = MARGO_TIMER_NULL;
     }
     margo_addr_free(state->context->mid, state->address);
+    ABT_mutex_unlock(ABT_MUTEX_MEMORY_GET_HANDLE(&state->mtx));
+    uint16_t id = state->provider_id;
+    margo_instance_id mid = state->context->mid;
     free(state);
 }
 
@@ -148,8 +156,9 @@ static flock_return_t centralized_create_group(
                 ret = FLOCK_ERR_FROM_MERCURY;
                 goto error;
             }
-            margo_timer_create(mid, ping_timer_callback, state, &state->timer);
-            margo_timer_start(state->timer, 1000);
+            margo_timer_create(mid, ping_timer_callback, state, &state->ping_timer);
+            state->last_ping_timestamp = ABT_get_wtime();
+            margo_timer_start(state->ping_timer, PING_INTERVAL_MS);
         }
     }
 
@@ -163,45 +172,67 @@ error:
 
 static void ping_timer_callback(void* args)
 {
+    double now, next_ping_ms;
     member_state* state = (member_state*)args;
-    if(state->need_stop) return;
-
     hg_return_t hret = HG_SUCCESS;
+
+    ABT_mutex_lock(ABT_MUTEX_MEMORY_GET_HANDLE(&state->mtx));
     hret = margo_create(
             state->context->mid,
             state->address,
             state->context->ping_rpc_id,
             &state->last_ping_handle);
     if(hret != HG_SUCCESS) {
-        // TODO print an error
-        return;
+        margo_warning(state->context->mid, "[flock] Failed to create ping RPC handle");
+        ABT_mutex_unlock(ABT_MUTEX_MEMORY_GET_HANDLE(&state->mtx));
+        goto restart_timer;
     }
-    double t1 = ABT_get_wtime();
-    hret = margo_provider_forward_timed(
+    margo_request req = MARGO_REQUEST_NULL;
+    hret = margo_provider_iforward_timed(
             state->provider_id,
             state->last_ping_handle,
             &state->context->view.digest,
-            1000);
-    double t2 = ABT_get_wtime();
+            PING_TIMEOUT_MS, &req);
+    if(hret != HG_SUCCESS) {
+        margo_warning(state->context->mid, "[flock] Failed to forward ping RPC handle");
+        ABT_mutex_unlock(ABT_MUTEX_MEMORY_GET_HANDLE(&state->mtx));
+        goto restart_timer;
+    }
+    ABT_mutex_unlock(ABT_MUTEX_MEMORY_GET_HANDLE(&state->mtx));
+
+    // wait for request outside of lock, since the handle can be cancelled
+    hret = margo_wait(req);
+
+    ABT_mutex_lock(ABT_MUTEX_MEMORY_GET_HANDLE(&state->mtx));
     margo_destroy(state->last_ping_handle);
     state->last_ping_handle = HG_HANDLE_NULL;
+    ABT_mutex_unlock(ABT_MUTEX_MEMORY_GET_HANDLE(&state->mtx));
 
-    double next_ms = 1000.0 - (t2 - t1)*1000.0;
-    if(next_ms <= 0) next_ms = 1000.0;
+    // request was canceled, we need to terminate
+    if(hret == HG_CANCELED) return;
 
-    switch(hret) {
-        case HG_SUCCESS:
-            state->num_ping_timeouts = 0;
-            margo_timer_start(state->timer, next_ms);
-            return;
-        case HG_TIMEOUT:
-            state->num_ping_timeouts += 1;
-            margo_timer_start(state->timer, next_ms);
-            return;
-        default:
-            return;
+    if(hret == HG_SUCCESS) state->num_ping_timeouts = 0;
+    else if(hret == HG_TIMEOUT) state->num_ping_timeouts += 1;
+    else {
+        margo_warning(state->context->mid,
+            "[flock] Unhandled error from margo_provider_forward_timed in ping timer (%s)",
+            HG_Error_to_string(hret));
     }
 
+    if(state->num_ping_timeouts == PING_MAX_NUM_TIMEOUTS) {
+        // TODO
+    }
+
+restart_timer:
+    now = ABT_get_wtime();
+    next_ping_ms = PING_INTERVAL_MS - (now - state->last_ping_timestamp)*1000.0;
+    state->last_ping_timestamp = now;
+    if(next_ping_ms <= 0) next_ping_ms = 1.0;
+    ABT_mutex_lock(ABT_MUTEX_MEMORY_GET_HANDLE(&state->mtx));
+    if(state->ping_timer) {
+        margo_timer_start(state->ping_timer, next_ping_ms);
+    }
+    ABT_mutex_unlock(ABT_MUTEX_MEMORY_GET_HANDLE(&state->mtx));
 }
 
 static DEFINE_MARGO_RPC_HANDLER(ping_rpc_ult)
@@ -224,10 +255,19 @@ static void ping_rpc_ult(hg_handle_t h)
     hg_return_t hret   = HG_SUCCESS;
     hg_handle_t handle = HG_HANDLE_NULL;
     hret = margo_create(ctx->mid, ctx->primary.address, ctx->get_view_rpc_id, &handle);
+    if(hret != HG_SUCCESS) goto finish;
 
     hret = margo_provider_forward(ctx->primary.provider_id, handle, NULL);
+    if(hret != HG_SUCCESS) {
+        margo_destroy(handle);
+        goto finish;
+    }
 
     hret = margo_get_output(handle, &ctx->view);
+    if(hret != HG_SUCCESS) {
+        margo_destroy(handle);
+        goto finish;
+    }
 
     margo_free_output(handle, NULL);
     margo_destroy(handle);
@@ -247,16 +287,29 @@ static void get_view_rpc_ult(hg_handle_t h)
     /* find the context */
     const struct hg_info* info = margo_get_info(h);
     centralized_context* ctx = (centralized_context*)margo_registered_data(mid, info->id);
+    if(!ctx) goto finish;
 
     /* respond with the current view */
     margo_respond(h, &ctx->view);
 
+finish:
     margo_destroy(h);
 }
 
 static flock_return_t centralized_destroy_group(void* ctx)
 {
     centralized_context* context = (centralized_context*)ctx;
+    if(context->is_primary) {
+        // Terminate the ULTs that ping the other members
+        // We do this before deregistering the RPCs to avoid ULTs
+        // failing because they are still using the RPC ids.
+        FLOCK_GROUP_VIEW_LOCK(&context->view);
+        flock_group_view_clear_extra(&context->view);
+        FLOCK_GROUP_VIEW_UNLOCK(&context->view);
+    }
+    // FIXME: in non-primary members, it's possible that we are calling margo_deregister
+    // while a ping RPC is in flight. There is nothing much we can do, this is something
+    // to solve at the Mercury level. See here: https://github.com/mercury-hpc/mercury/issues/534
     if(context->ping_rpc_id) margo_deregister(context->mid, context->ping_rpc_id);
     if(context->get_view_rpc_id) margo_deregister(context->mid, context->get_view_rpc_id);
     if(context->config) json_object_put(context->config);

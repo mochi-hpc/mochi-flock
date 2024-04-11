@@ -175,6 +175,22 @@ static inline void flock_group_view_clear(flock_group_view_t *view)
 }
 
 /**
+ * @brief Clear the extra fields of a flock_flock_group_view_t.
+ *
+ * @param view Group view to clear.
+ */
+static inline void flock_group_view_clear_extra(flock_group_view_t *view)
+{
+    for (size_t i = 0; i < view->members.size; ++i) {
+        flock_member_t* member = &view->members.data[i];
+        if(member->extra.free)
+            (member->extra.free)(member->extra.data);
+        member->extra.free = NULL;
+        member->extra.data = NULL;
+    }
+}
+
+/**
  * @brief Binary search through the sorted array of members.
  *
  * @param view View to search in.
