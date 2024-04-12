@@ -48,10 +48,9 @@ struct TestGroup {
             flock_group_view_add_metadata(&initial_view, "shane", "snyder");
 
             struct flock_provider_args args = FLOCK_PROVIDER_ARGS_INIT;
-            args.initial_view = &initial_view;
 
-            flock_return_t ret = flock_provider_register(
-                    mid, i+1, provider_config, &args,
+            flock_return_t ret = flock_provider_bootstrap(
+                    mid, i+1, &initial_view, provider_config, &args,
                     &providers[i]);
             if(ret != FLOCK_SUCCESS)
                 throw std::runtime_error(

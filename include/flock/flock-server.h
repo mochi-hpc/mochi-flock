@@ -34,20 +34,21 @@ typedef struct flock_provider* flock_provider_t;
  */
 struct flock_provider_args {
     ABT_pool            pool;
-    flock_group_view_t* initial_view;
     flock_backend_impl* backend;
 };
 
 #define FLOCK_PROVIDER_ARGS_INIT { \
     /* .pool = */ ABT_POOL_NULL,   \
-    /* .initial_view = */ NULL,    \
     /* .backend = */ NULL          \
 }
 
 /**
- * @brief Creates a new FLOCK provider. If FLOCK_PROVIDER_IGNORE
- * is passed as last argument, the provider will be automatically
- * destroyed when calling margo_finalize.
+ * @brief Creates a new FLOCK provider, bootstrapping the group
+ * from a common initial view. The initial view MUST contain the
+ * calling provider.
+ *
+ * @warning Calling this function with a different view on each
+ * provider will cause undefined behavior.
  *
  * The config parameter must have the following format.
  *
@@ -62,15 +63,17 @@ struct flock_provider_args {
  *
  * @param[in] mid Margo instance
  * @param[in] provider_id provider id
+ * @param[in] initial_view initial view
  * @param[in] config Configuration
- * @param[in] args argument structure
+ * @param[in] args optional argument structure
  * @param[out] provider provider
  *
  * @return FLOCK_SUCCESS or error code defined in flock-common.h
  */
-flock_return_t flock_provider_register(
+flock_return_t flock_provider_bootstrap(
         margo_instance_id mid,
         uint16_t provider_id,
+        flock_group_view_t* initial_view,
         const char* config,
         const struct flock_provider_args* args,
         flock_provider_t* provider);

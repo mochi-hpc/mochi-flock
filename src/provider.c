@@ -34,13 +34,17 @@ static DECLARE_MARGO_RPC_HANDLER(flock_get_view_ult)
 static void flock_get_view_ult(hg_handle_t h);
 
 
-flock_return_t flock_provider_register(
+flock_return_t flock_provider_bootstrap(
         margo_instance_id mid,
         uint16_t provider_id,
+        flock_group_view_t* initial_view,
         const char* config_str,
         const struct flock_provider_args* args,
         flock_provider_t* provider)
 {
+    if(!initial_view || !initial_view->members.size)
+        return FLOCK_ERR_INVALID_ARGS;
+
     struct flock_provider_args a = FLOCK_PROVIDER_ARGS_INIT;
     if(args) a = *args;
     flock_provider_t p;
@@ -171,8 +175,7 @@ flock_return_t flock_provider_register(
         .metadata_update_callback = dispatch_metadata_update
     };
 
-    if(a.initial_view)
-        FLOCK_GROUP_VIEW_MOVE(a.initial_view, &backend_init_args.initial_view);
+    FLOCK_GROUP_VIEW_MOVE(initial_view, &backend_init_args.initial_view);
 
     ret = a.backend->init_group(&backend_init_args, &context);
     if (ret != FLOCK_SUCCESS) {

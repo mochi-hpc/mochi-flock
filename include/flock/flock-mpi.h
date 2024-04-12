@@ -3,8 +3,8 @@
  *
  * See COPYRIGHT in top-level directory.
  */
-#ifndef __FLOCK_BOOTSTRAP_MPI_H
-#define __FLOCK_BOOTSTRAP_MPI_H
+#ifndef __FLOCK_MPI_H
+#define __FLOCK_MPI_H
 
 #include <string.h>
 #include <margo.h>
@@ -32,7 +32,7 @@ extern "C" {
  *
  * @return FLOCK_SUCCESS or other error codes.
  */
-static inline flock_return_t flock_bootstrap_from_mpi(
+static inline flock_return_t flock_group_view_init_from_mpi(
         margo_instance_id mid,
         uint16_t provider_id,
         MPI_Comm comm,
