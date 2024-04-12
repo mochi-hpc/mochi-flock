@@ -12,12 +12,11 @@ on:
 jobs:
   tests:
     runs-on: ubuntu-22.04
-### Uncomment these two lines to push dependencies into the build cache
-#   permissions:
-#     packages: write
+    permissions:
+      packages: write
     steps:
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
 
     - name: Setup spack
       uses: spack/setup-spack@v2.1.1
@@ -50,15 +49,11 @@ jobs:
         make
         make test
 
-    # Uncomment the step bellow to push the dependencies into the build cache
-    # Note: to be able to push the specs to the build cache,
-    # The repository should have Write access here:
-    # https://github.com/orgs/mochi-hpc/packages/container/mochi-spack-buildcache/settings
-#   - name: Push packages to buildcache and update index
-#     if: ${{ !cancelled() }}
-#     run: |
-#       spack -e tests mirror set --push \
-#       --oci-username ${{ github.actor }} \
-#       --oci-password "${{ secrets.GITHUB_TOKEN }}" mochi-buildcache
-#       spack -e tests buildcache push --base-image ubuntu:22.04 \
-#       --unsigned --update-index mochi-buildcache
+    - name: Push packages to buildcache and update index
+      if: ${{ !cancelled() }}
+      run: |
+        spack -e tests mirror set --push \
+        --oci-username ${{ github.actor }} \
+        --oci-password "${{ secrets.GITHUB_TOKEN }}" mochi-buildcache
+        spack -e tests buildcache push --base-image ubuntu:22.04 \
+        --unsigned --update-index mochi-buildcache

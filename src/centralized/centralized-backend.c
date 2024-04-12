@@ -47,6 +47,7 @@ typedef struct centralized_context {
 typedef struct member_state {
     centralized_context* context;
     hg_addr_t            address;
+    size_t               rank;
     uint16_t             provider_id;
     margo_timer_t        ping_timer;
     double               last_ping_timestamp;
@@ -266,6 +267,7 @@ static flock_return_t centralized_create_group(
             member->extra.free  = member_state_free;
             member_state* state = (member_state*)(member->extra.data);
             state->context      = ctx;
+            state->rank         = member->rank;
             state->provider_id  = member->provider_id;
             if(HG_SUCCESS != margo_addr_lookup(mid, member->address, &state->address)) {
                 ret = FLOCK_ERR_FROM_MERCURY;
@@ -341,7 +343,11 @@ static void ping_timer_callback(void* args)
     }
 
     if(state->num_ping_timeouts == state->context->ping_max_num_timeouts) {
-        // TODO
+        centralized_context* context = state->context;
+        FLOCK_GROUP_VIEW_LOCK(&context->view);
+        flock_group_view_remove_member(&context->view, state->rank);
+        FLOCK_GROUP_VIEW_UNLOCK(&context->view);
+        return;
     }
 
 restart_timer:
