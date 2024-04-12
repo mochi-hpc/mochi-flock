@@ -4,6 +4,7 @@
  * See COPYRIGHT in top-level directory.
  */
 #include <string.h>
+#include <stdlib.h>
 #include <json-c/json.h>
 #include <margo-timer.h>
 #include "flock/flock-backend.h"
@@ -11,9 +12,7 @@
 #include "../provider.h"
 #include "centralized-backend.h"
 
-#define PING_TIMEOUT_MS 1000.0
-#define PING_INTERVAL_MS 1000.0
-#define PING_MAX_NUM_TIMEOUTS 3
+#define RAND_BETWEEN(x, y) ((x) + (((double)rand()) / RAND_MAX)*(y-x))
 
 /**
  * @brief The "centralized" backend uses the member with the lowest rank
@@ -34,6 +33,12 @@ typedef struct centralized_context {
     flock_group_view_t   view;
     hg_id_t              ping_rpc_id;
     hg_id_t              get_view_rpc_id;
+    /* extracted from configuration */
+    double ping_timeout_ms_min;
+    double ping_timeout_ms_max;
+    double ping_interval_ms_min;
+    double ping_interval_ms_max;
+    unsigned ping_max_num_timeouts;
 } centralized_context;
 
 /**
@@ -83,6 +88,114 @@ static flock_return_t centralized_create_group(
 {
     flock_return_t ret = FLOCK_SUCCESS;
 
+    double   ping_timeout_ms_min   = 1000.0;
+    double   ping_timeout_ms_max   = 1000.0;
+    double   ping_interval_ms_min  = 1000.0;
+    double   ping_interval_ms_max  = 1000.0;
+    unsigned ping_max_num_timeouts = 3;
+
+    if(args->config) {
+        if(!json_object_is_type(args->config, json_type_object)) {
+            margo_error(args->mid,
+                "[flock] Invalid configuration type for centralized backend (expected object)");
+            return FLOCK_ERR_INVALID_CONFIG;
+        }
+        // process "ping_timeout_ms"
+        struct json_object* ping_timeout_ms_pair =
+            json_object_object_get(args->config, "ping_timeout_ms");
+        if(ping_timeout_ms_pair) {
+            if(json_object_is_type(ping_timeout_ms_pair, json_type_double)) {
+                // ping_timeout_ms is a single number
+                ping_timeout_ms_min = ping_timeout_ms_max = json_object_get_double(ping_timeout_ms_pair);
+            } else if(json_object_is_type(ping_timeout_ms_pair, json_type_array)
+            && json_object_array_length(ping_timeout_ms_pair) == 2) {
+                // ping_timeout_ms is an array of two numbers (min and max)
+                struct json_object* a = json_object_array_get_idx(ping_timeout_ms_pair, 0);
+                struct json_object* b = json_object_array_get_idx(ping_timeout_ms_pair, 1);
+                if(!(json_object_is_type(a, json_type_double) && json_object_is_type(b, json_type_double))) {
+                    margo_error(args->mid,
+                        "[flock] In centralized backend configuration: "
+                        "\"ping_timeout_ms\" should be an array of two numbers");
+                    return FLOCK_ERR_INVALID_CONFIG;
+                }
+                ping_timeout_ms_min = json_object_get_double(a);
+                ping_timeout_ms_max = json_object_get_double(b);
+                if(ping_timeout_ms_min > ping_timeout_ms_max
+                || ping_timeout_ms_min < 0 || ping_timeout_ms_max < 0) {
+                    margo_error(args->mid,
+                        "[flock] In centralized backend configuration: "
+                        "invalid values or order in \"ping_timeout_ms\" array");
+                    return FLOCK_ERR_INVALID_CONFIG;
+                }
+            }
+        }
+        // process "ping_interval_ms"
+        struct json_object* ping_interval_ms_pair =
+            json_object_object_get(args->config, "ping_interval_ms");
+        if(ping_interval_ms_pair) {
+            if(json_object_is_type(ping_interval_ms_pair, json_type_double)) {
+                // ping_interval_ms is a single number
+                ping_interval_ms_min = ping_interval_ms_max = json_object_get_double(ping_interval_ms_pair);
+            } else if(json_object_is_type(ping_interval_ms_pair, json_type_array)
+            && json_object_array_length(ping_interval_ms_pair) == 2) {
+                // ping_timeout_ms is an array of two numbers (min and max)
+                struct json_object* a = json_object_array_get_idx(ping_interval_ms_pair, 0);
+                struct json_object* b = json_object_array_get_idx(ping_interval_ms_pair, 1);
+                if(!(json_object_is_type(a, json_type_double) && json_object_is_type(b, json_type_double))) {
+                    margo_error(args->mid,
+                        "[flock] In centralized backend configuration: "
+                        "\"ping_interval_ms\" should be an array of two numbers");
+                    return FLOCK_ERR_INVALID_CONFIG;
+                }
+                ping_interval_ms_min = json_object_get_double(a);
+                ping_interval_ms_max = json_object_get_double(b);
+                if(ping_interval_ms_min > ping_interval_ms_max
+                || ping_interval_ms_min < 0 || ping_interval_ms_max < 0) {
+                    margo_error(args->mid,
+                        "[flock] In centralized backend configuration: "
+                        "invalid values or order in \"ping_interval_ms\" array");
+                    return FLOCK_ERR_INVALID_CONFIG;
+                }
+            }
+        }
+        // process ping_max_num_timeouts
+        struct json_object* ping_max_num_timeouts_json =
+            json_object_object_get(args->config, "ping_max_num_timeouts");
+        if(ping_max_num_timeouts_json) {
+            if(!json_object_is_type(ping_max_num_timeouts_json, json_type_int)) {
+                margo_error(args->mid,
+                    "[flock] In centralized backend configuration: "
+                    "\"ping_max_num_timeouts\" should be an integer");
+                return FLOCK_ERR_INVALID_CONFIG;
+            }
+            int x = json_object_get_int(ping_max_num_timeouts_json);
+            if(x < 1) {
+                margo_error(args->mid,
+                        "[flock] In centralized backend configuration: "
+                        "\"ping_max_num_timeouts\" should be > 1");
+                return FLOCK_ERR_INVALID_CONFIG;
+            }
+            ping_max_num_timeouts = (unsigned)x;
+        }
+    }
+
+    // fill a json_object structure with the final configuration
+    struct json_object* config = json_object_new_object();
+    if(ping_timeout_ms_min != ping_timeout_ms_max) {
+        struct json_object* ping_timeout_ms_pair = json_object_new_array_ext(2);
+        json_object_array_add(ping_timeout_ms_pair, json_object_new_double(ping_timeout_ms_min));
+        json_object_array_add(ping_timeout_ms_pair, json_object_new_double(ping_timeout_ms_max));
+        json_object_object_add(config, "ping_timeout_ms", ping_timeout_ms_pair);
+    }
+    if(ping_interval_ms_min != ping_interval_ms_max) {
+        struct json_object* ping_interval_ms_pair = json_object_new_array_ext(2);
+        json_object_array_add(ping_interval_ms_pair, json_object_new_double(ping_interval_ms_min));
+        json_object_array_add(ping_interval_ms_pair, json_object_new_double(ping_interval_ms_max));
+        json_object_object_add(config, "ping_interval_ms", ping_interval_ms_pair);
+    }
+    json_object_object_add(config, "ping_max_num_timeouts",
+        json_object_new_uint64(ping_max_num_timeouts));
+
     /* group must have at least one member */
     if(args->initial_view.members.size == 0)
         return FLOCK_ERR_INVALID_ARGS;
@@ -123,8 +236,12 @@ static flock_return_t centralized_create_group(
     ctx->primary.provider_id = primary_member->provider_id;
 
     /* copy the configuration */
-    // TODO
-    ctx->config = json_object_new_object();
+    ctx->config = config;
+    ctx->ping_timeout_ms_min   = ping_timeout_ms_min;
+    ctx->ping_timeout_ms_max   = ping_timeout_ms_max;
+    ctx->ping_interval_ms_min  = ping_interval_ms_min;
+    ctx->ping_interval_ms_max  = ping_interval_ms_max;
+    ctx->ping_max_num_timeouts = ping_max_num_timeouts;
 
     /* move the initial view in the context */
     FLOCK_GROUP_VIEW_MOVE(&args->initial_view, &ctx->view);
@@ -156,7 +273,10 @@ static flock_return_t centralized_create_group(
             }
             margo_timer_create(mid, ping_timer_callback, state, &state->ping_timer);
             state->last_ping_timestamp = ABT_get_wtime();
-            margo_timer_start(state->ping_timer, PING_INTERVAL_MS);
+            double interval = RAND_BETWEEN(
+                state->context->ping_interval_ms_min,
+                state->context->ping_interval_ms_max);
+            margo_timer_start(state->ping_timer, interval);
         }
     }
 
@@ -186,11 +306,14 @@ static void ping_timer_callback(void* args)
         goto restart_timer;
     }
     margo_request req = MARGO_REQUEST_NULL;
+    double timeout = RAND_BETWEEN(
+        state->context->ping_timeout_ms_min,
+        state->context->ping_timeout_ms_max);
     hret = margo_provider_iforward_timed(
             state->provider_id,
             state->last_ping_handle,
             &state->context->view.digest,
-            PING_TIMEOUT_MS, &req);
+            timeout, &req);
     if(hret != HG_SUCCESS) {
         margo_warning(state->context->mid, "[flock] Failed to forward ping RPC handle");
         ABT_mutex_unlock(ABT_MUTEX_MEMORY_GET_HANDLE(&state->mtx));
@@ -217,13 +340,16 @@ static void ping_timer_callback(void* args)
             HG_Error_to_string(hret));
     }
 
-    if(state->num_ping_timeouts == PING_MAX_NUM_TIMEOUTS) {
+    if(state->num_ping_timeouts == state->context->ping_max_num_timeouts) {
         // TODO
     }
 
 restart_timer:
     now = ABT_get_wtime();
-    next_ping_ms = PING_INTERVAL_MS - (now - state->last_ping_timestamp)*1000.0;
+    next_ping_ms = RAND_BETWEEN(
+        state->context->ping_interval_ms_min,
+        state->context->ping_interval_ms_max);
+    next_ping_ms -= (now - state->last_ping_timestamp)*1000.0;
     state->last_ping_timestamp = now;
     if(next_ping_ms <= 0) next_ping_ms = 1.0;
     ABT_mutex_lock(ABT_MUTEX_MEMORY_GET_HANDLE(&state->mtx));
