@@ -20,3 +20,6 @@ spack:
   config:
     install_tree:
       padded_length: 128
+  packages:
+    mochi-margo:
+      require: "@0.16.0:"
