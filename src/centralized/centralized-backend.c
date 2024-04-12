@@ -64,8 +64,6 @@ static inline void member_state_free(void* args)
     }
     margo_addr_free(state->context->mid, state->address);
     ABT_mutex_unlock(ABT_MUTEX_MEMORY_GET_HANDLE(&state->mtx));
-    uint16_t id = state->provider_id;
-    margo_instance_id mid = state->context->mid;
     free(state);
 }
 
@@ -304,6 +302,17 @@ static flock_return_t centralized_destroy_group(void* ctx)
         // We do this before deregistering the RPCs to avoid ULTs
         // failing because they are still using the RPC ids.
         FLOCK_GROUP_VIEW_LOCK(&context->view);
+        margo_timer_t* timers = (margo_timer_t*)calloc(context->view.members.size, sizeof(*timers));
+        size_t num_timers = 0;
+        for(size_t i = 0; i < context->view.members.size; ++i) {
+            member_state* state = (member_state*)context->view.members.data[i].extra.data;
+            if(!state) continue;
+            if(state->ping_timer == MARGO_TIMER_NULL) continue;
+            timers[num_timers] = state->ping_timer;
+            num_timers += 1;
+        }
+        margo_timer_cancel_many(num_timers, timers);
+        free(timers);
         flock_group_view_clear_extra(&context->view);
         FLOCK_GROUP_VIEW_UNLOCK(&context->view);
     }
