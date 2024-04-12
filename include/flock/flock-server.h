@@ -8,6 +8,7 @@
 
 #include <flock/flock-common.h>
 #include <flock/flock-backend.h>
+#include <flock/flock-group.h>
 #include <margo.h>
 
 #ifdef __cplusplus
@@ -34,46 +35,75 @@ typedef struct flock_provider* flock_provider_t;
  */
 struct flock_provider_args {
     ABT_pool            pool;
+    union {
+        flock_group_view_t* initial_view;
+        uintptr_t           mpi_comm;
+        struct {
+            flock_group_view_t* existing_view;
+            size_t              claim_rank;
+        } join;
+    } bootstrap;
     flock_backend_impl* backend;
 };
 
 #define FLOCK_PROVIDER_ARGS_INIT { \
     /* .pool = */ ABT_POOL_NULL,   \
+    /* .bootstrap = */ {NULL},     \
     /* .backend = */ NULL          \
 }
 
 /**
- * @brief Creates a new FLOCK provider, bootstrapping the group
- * from a common initial view. The initial view MUST contain the
- * calling provider.
- *
- * @warning Calling this function with a different view on each
- * provider will cause undefined behavior.
+ * The constants below can be used as desired_rank in flock_provider_join.
+ * - FLOCK_RANK_ANY: the new member may be assigned any available rank
+ * - FLOCK_RANK_NEXT: the new member will be assigned a rank greater than any existing rank
+ * - FLOCK_RANK_FILL: the new member will be assigned the smallest rank that is not in use,
+ *   filling any potential gap in the list of members.
+ */
+#define FLOCK_RANK_ANY  SIZE_MAX
+#define FLOCK_RANK_NEXT (SIZE_MAX-1)
+#define FLOCK_RANK_FILL (SIZE_MAX-2)
+
+/**
+ * @brief Creates a new FLOCK provider.
  *
  * The config parameter must have the following format.
  *
  * ```
  * {
  *     "type": "static", // or another backend type
+ *     "bootstrap": "<method>",
  *     "group": {
  *          // backend-specified configuration
  *     }
  * }
  * ```
  *
+ * The bootstrap method may be one of the following:
+ * - "init": use args->bootstrap.initial_view as initial view of the group.
+ *   All the providers in the view must be registered at the same time and
+ *   with the same configuration and initial view. If different configurations
+ *   or initial views are provided to each provider, the result is undefined.
+ * - "mpi": use args->bootstrap.mpi (cast to an MPI_Comm) to initialize
+ *   the initial view of the group. This method will involve collective
+ *   communications across processes of the specified communicator.
+ * - "join": use args->bootstrap.join.existing_view as the view of an existing
+ *   group that the created provider must join.  args->bootstrap.join.claim_rank
+ *   may be set to a rank the caller wants the new provider to have. This field
+ *   may be set to FLOCK_RANK_ANY, FLOCK_RANK_NEXT, or FLOCK_RANK_FILL to
+ *   have a rank automatically selected using different strategies.
+ *
  * @param[in] mid Margo instance
  * @param[in] provider_id provider id
  * @param[in] initial_view initial view
  * @param[in] config Configuration
- * @param[in] args optional argument structure
+ * @param[in] args additions arguments structure
  * @param[out] provider provider
  *
  * @return FLOCK_SUCCESS or error code defined in flock-common.h
  */
-flock_return_t flock_provider_bootstrap(
+flock_return_t flock_provider_register(
         margo_instance_id mid,
         uint16_t provider_id,
-        flock_group_view_t* initial_view,
         const char* config,
         const struct flock_provider_args* args,
         flock_provider_t* provider);

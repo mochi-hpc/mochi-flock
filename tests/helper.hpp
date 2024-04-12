@@ -16,7 +16,13 @@ struct TestGroup {
 
     TestGroup(margo_instance_id mid,
               size_t group_size,
-              const char* provider_config = R"({"group":{"type":"static","config":{}}})") {
+              const char* provider_config = R"({
+                "group":{
+                    "type":"static",
+                    "config":{}
+                },
+                "bootstrap": "init"
+              })") {
 
         // get address of current process
         hg_addr_t addr = HG_ADDR_NULL;
@@ -35,7 +41,7 @@ struct TestGroup {
         // register flock providers
         providers.resize(group_size, nullptr);
         for(size_t i = 0; i < group_size; ++i) {
-            // IMPORTANT: flock_provider_register will take ownerwhip of the view
+            // IMPORTANT: flock_provider_bootstrap will take ownerwhip of the view
             // we are creating, so we have to re-create it for every provider
 
             // create the initial group view to bootstrap with
@@ -48,9 +54,10 @@ struct TestGroup {
             flock_group_view_add_metadata(&initial_view, "shane", "snyder");
 
             struct flock_provider_args args = FLOCK_PROVIDER_ARGS_INIT;
+            args.bootstrap.initial_view = &initial_view;
 
-            flock_return_t ret = flock_provider_bootstrap(
-                    mid, i+1, &initial_view, provider_config, &args,
+            flock_return_t ret = flock_provider_register(
+                    mid, i+1, provider_config, &args,
                     &providers[i]);
             if(ret != FLOCK_SUCCESS)
                 throw std::runtime_error(

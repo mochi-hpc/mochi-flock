@@ -27,11 +27,12 @@ int main(int argc, char** argv)
 
     struct flock_provider_args args = FLOCK_PROVIDER_ARGS_INIT;
     flock_group_view_t initial_view = FLOCK_GROUP_VIEW_INITIALIZER;
+    args.bootstrap.initial_view = &initial_view;
     flock_group_view_add_member(&initial_view, 0, 42, addr_str);
 
     const char* config = "{ \"group\":{ \"type\":\"static\", \"config\":{} } }";
 
-    flock_provider_bootstrap(mid, 42, &initial_view, config, &args, FLOCK_PROVIDER_IGNORE);
+    flock_provider_register(mid, 42, config, &args, FLOCK_PROVIDER_IGNORE);
 
     margo_wait_for_finalize(mid);
 

@@ -16,12 +16,13 @@ static int flock_register_provider(
     margo_instance_id mid = bedrock_args_get_margo_instance(args);
     uint16_t provider_id  = bedrock_args_get_provider_id(args);
 
-    struct flock_provider_args flock_args = { 0 };
+    struct flock_provider_args flock_args = FLOCK_PROVIDER_ARGS_INIT;
     const char* config = bedrock_args_get_config(args);
     flock_args.pool   = bedrock_args_get_pool(args);
 
+    // TODO find a way to specify the initial view
     return flock_provider_register(mid, provider_id, config, &flock_args,
-                                   (flock_provider_t*)provider);
+                                    (flock_provider_t*)provider);
 }
 
 static int flock_deregister_provider(
