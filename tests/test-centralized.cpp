@@ -37,7 +37,16 @@ TEST_CASE("Test group handle for centralized group", "[centralize]") {
 
     // create test group with 5 processes
     auto group = std::make_unique<TestGroup>(context->mid, 5,
-        R"({"group":{"type":"centralized","config":{}}})");
+        R"({
+            "group":{
+                "type":"centralized",
+                "config":{
+                    "ping_timeout_ms": [800.0, 1000.0],
+                    "ping_interval_ms": [800.0, 1000.0],
+                    "ping_max_num_timeouts": 2
+                }
+            }
+           })");
 
     SECTION("Create client and group handle") {
         flock_client_t client;
