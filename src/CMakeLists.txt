@@ -60,12 +60,16 @@ set_target_properties (flock-server
 if (${ENABLE_BEDROCK})
 # bedrock-module library
 add_library (flock-bedrock-module ${bedrock-module-src-files})
-target_link_libraries (flock-bedrock-module flock-server flock-client bedrock-server)
+target_link_libraries (flock-bedrock-module PRIVATE flock-server flock-client bedrock-server)
 target_include_directories (flock-bedrock-module PUBLIC $<INSTALL_INTERFACE:include>)
 target_include_directories (flock-bedrock-module BEFORE PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>)
 target_include_directories (flock-bedrock-module BEFORE PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+if (ENABLE_MPI)
+    target_compile_definitions (flock-bedrock-module PRIVATE ENABLE_MPI)
+    target_link_libraries (flock-bedrock-module PUBLIC MPI::MPI_C)
+endif ()
 set_target_properties (flock-bedrock-module
     PROPERTIES VERSION ${FLOCK_VERSION}
     SOVERSION ${FLOCK_VERSION_MAJOR})

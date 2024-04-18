@@ -8,7 +8,7 @@
             "name": "my_flock_provider",
             "provider_id": 42,
             "config": {
-                "bootstrap": "self",
+                "bootstrap": "mpi",
                 "group": {
                     "type": "static",
                     "config": {}
