@@ -14,9 +14,10 @@ extern "C" {
 #endif
 
 typedef enum flock_update_t {
-    FLOCK_MEMBER_JOINED,
-    FLOCK_MEMBER_LEFT,
-    FLOCK_MEMBER_DIED,
+    FLOCK_MEMBER_JOINED, /* new member added */
+    FLOCK_MEMBER_LEFT,   /* member with specified rank left */
+    FLOCK_MEMBER_DIED,   /* member with specified rank died */
+    FLOCK_MEMBER_MOVED,  /* member with specified rank changed address and/or provider id */
 } flock_update_t;
 
 #define FLOCK_MODE_INIT_UPDATE 0x1 /* Update the group on initialization */

@@ -6,6 +6,7 @@
 #include "flock/flock-server.h"
 #include "provider.h"
 #include "types.h"
+#include "bootstrap.h"
 
 /* backends that we want to add at compile time */
 #include "static/static-backend.h"
@@ -43,27 +44,48 @@ flock_return_t flock_provider_register(
 {
     struct flock_provider_args a = FLOCK_PROVIDER_ARGS_INIT;
     if(args) a = *args;
-    flock_provider_t p;
+    flock_provider_t p = NULL;
     hg_id_t id;
     hg_bool_t flag;
     flock_return_t ret = FLOCK_SUCCESS;
+    struct json_object* config = NULL;
+    struct json_object* group_config = NULL;
 
-    margo_info(mid, "[flock] Registering provider with provider id %u", provider_id);
+    flock_backend_init_args_t backend_init_args = {
+        .mid = mid,
+        .pool = a.pool,
+        .provider_id = provider_id,
+        .config = NULL,
+        .initial_view = FLOCK_GROUP_VIEW_INITIALIZER,
+        .callback_context = NULL,
+        .member_update_callback = dispatch_member_update,
+        .metadata_update_callback = dispatch_metadata_update
+    };
+
+    margo_trace(mid, "[flock] Registering provider with provider id %u", provider_id);
+
+    /* add backends available at compiler time (e.g. default/static backends) */
+    flock_register_static_backend(); // function from "static/static-backend.h"
+    flock_register_centralized_backend(); // function from "centralized/centralized-backend.h"
+    /* FIXME: add other backend registrations here */
+    /* ... */
+
+    /* check if the margo instance is listening */
+    flag = margo_is_listening(mid);
+    if(flag == HG_FALSE) {
+        margo_error(mid, "[flock] Margo instance is not a server");
+        ret = FLOCK_ERR_INVALID_ARGS;
+        goto finish;
+    }
 
     /* check if another provider with the same ID is already registered */
     if(margo_provider_registered_identity(mid, provider_id)) {
         margo_error(mid, "[flock] A provider with the same ID is already registered");
-        return FLOCK_ERR_INVALID_PROVIDER;
+        ret = FLOCK_ERR_INVALID_PROVIDER;
+        goto finish;
     }
 
-    flag = margo_is_listening(mid);
-    if(flag == HG_FALSE) {
-        margo_error(mid, "[flock] Margo instance is not a server");
-        return FLOCK_ERR_INVALID_ARGS;
-    }
-
-    // parse json configuration
-    struct json_object* config = NULL;
+    /* parse json configuration */
     if (config_str) {
         struct json_tokener*    tokener = json_tokener_new();
         enum json_tokener_error jerr;
@@ -84,44 +106,34 @@ flock_return_t flock_provider_register(
             return FLOCK_ERR_INVALID_CONFIG;
         }
     } else {
-        // create default JSON config
+        /* create default JSON config */
         config = json_object_new_object();
     }
 
-    p = (flock_provider_t)calloc(1, sizeof(*p));
-    if(p == NULL) {
-        margo_error(mid, "[flock] Could not allocate memory for provider");
-        json_object_put(config);
-        return FLOCK_ERR_ALLOCATION;
+    /* process the configuration */
+
+    /* "bootstrap" field */
+    struct json_object* bootstrap = json_object_object_get(config, "bootstrap");
+    const char* bootstrap_method = "self";
+    if(bootstrap) {
+        if(!json_object_is_type(bootstrap, json_type_string)) {
+            margo_error(mid, "[flock] \"bootstrap\" field should be of type string");
+            ret = FLOCK_ERR_INVALID_CONFIG;
+            goto finish;
+        }
+        bootstrap_method = json_object_get_string(bootstrap);
+    } else {
+        margo_warning(
+            mid, "[flock] \"bootstrap\" method not specified, defaulting to \"%s\"", bootstrap_method);
     }
 
-    p->mid = mid;
-    p->provider_id = provider_id;
-    p->pool = a.pool;
+    /* "file" field */
+    const char* filename = NULL;
+    struct json_object* file = json_object_object_get(config, "file");
+    if(file) filename = json_object_get_string(file);
 
-    ABT_rwlock_create(&p->update_callbacks_lock);
-    p->update_callbacks = NULL;
-
-    /* Client RPCs */
-
-    id = MARGO_REGISTER_PROVIDER(mid, "flock_get_view",
-            get_view_in_t, get_view_out_t,
-            flock_get_view_ult, provider_id, p->pool);
-    margo_register_data(mid, id, (void*)p, NULL);
-    p->get_view_id = id;
-
-    /* FIXME: add other RPC registration here */
-    /* ... */
-
-    /* add backends available at compiler time (e.g. default/static backends) */
-    flock_register_static_backend(); // function from "static/static-backend.h"
-    flock_register_centralized_backend(); // function from "centralized/centralized-backend.h"
-    /* FIXME: add other backend registrations here */
-    /* ... */
-
-    /* read the configuration to add defined groups */
+    /* "group" field */
     struct json_object* group = json_object_object_get(config, "group");
-    struct json_object* group_config = NULL;
     if (group) {
         if (!json_object_is_type(group, json_type_object)) {
             margo_error(mid, "[flock] \"group\" field should be an object in provider configuration");
@@ -151,38 +163,59 @@ flock_return_t flock_provider_register(
     }
 
     if(!a.backend) {
-        margo_error(mid, "[flock] No backend provided for the group");
+        margo_error(mid, "[flock] No backend type provided for the group");
         ret = FLOCK_ERR_INVALID_CONFIG;
         goto finish;
     }
 
     if(!group_config) group_config = json_object_new_object();
 
+    backend_init_args.config = group_config;
+
+    /* allocate provider */
+    p = (flock_provider_t)calloc(1, sizeof(*p));
+    if(p == NULL) {
+        margo_error(mid, "[flock] Could not allocate memory for provider");
+        json_object_put(config);
+        return FLOCK_ERR_ALLOCATION;
+    }
+
+    p->mid         = mid;
+    p->provider_id = provider_id;
+    p->pool        = a.pool;
+
+    ABT_rwlock_create(&p->update_callbacks_lock);
+    p->update_callbacks = NULL;
+    backend_init_args.callback_context = p;
+
+    /* register RPCs */
+    id = MARGO_REGISTER_PROVIDER(mid, "flock_get_view",
+            get_view_in_t, get_view_out_t,
+            flock_get_view_ult, provider_id, p->pool);
+    margo_register_data(mid, id, (void*)p, NULL);
+    p->get_view_id = id;
+    /* FIXME: add other RPC registration here */
+    /* ... */
+
+    /* bootstrap the initial view */
+    ret = flock_bootstrap_group_view(
+        bootstrap_method, mid, provider_id, &a,
+        filename, &backend_init_args.initial_view);
+    if(ret != FLOCK_SUCCESS) {
+        margo_error(mid, "[flock] Could not bootstrap initial view");
+        goto finish;
+    }
+
     /* create the new group's context */
     void* context = NULL;
-    flock_backend_init_args_t backend_init_args = {
-        .mid = mid,
-        .pool = p->pool,
-        .provider_id = provider_id,
-        .config = group_config,
-        .initial_view = FLOCK_GROUP_VIEW_INITIALIZER,
-        .callback_context = p,
-        .member_update_callback = dispatch_member_update,
-        .metadata_update_callback = dispatch_metadata_update
-    };
-
-    FLOCK_GROUP_VIEW_MOVE(a.bootstrap.initial_view, &backend_init_args.initial_view);
-
     ret = a.backend->init_group(&backend_init_args, &context);
     if (ret != FLOCK_SUCCESS) {
         margo_error(mid, "[flock] Could not create group, backend returned %d", ret);
         goto finish;
     }
 
-    flock_group_view_clear(&backend_init_args.initial_view);
-
     /* set the provider's group */
-    p->group = malloc(sizeof(*(p->group)));
+    p->group = calloc(1, sizeof(*(p->group)));
     p->group->ctx = context;
     p->group->fn  = a.backend;
 
@@ -195,9 +228,12 @@ flock_return_t flock_provider_register(
     if(provider)
         *provider = p;
 
-    margo_info(mid, "[flock] Provider registered with ID %d", (int)provider_id);
+    margo_trace(mid, "[flock] Provider registered with ID %d", (int)provider_id);
 
 finish:
+    flock_group_view_clear(&backend_init_args.initial_view);
+    if(ret != FLOCK_SUCCESS)
+        flock_finalize_provider(p);
     if(config) json_object_put(config);
     if(group_config) json_object_put(group_config);
     return ret;
@@ -205,8 +241,9 @@ finish:
 
 static void flock_finalize_provider(void* p)
 {
+    if(!p) return;
     flock_provider_t provider = (flock_provider_t)p;
-    margo_info(provider->mid, "[flock] Finalizing provider");
+    margo_trace(provider->mid, "[flock] Finalizing provider");
 
     ABT_rwlock_free(&provider->update_callbacks_lock);
     update_callback_t u = provider->update_callbacks;
@@ -227,14 +264,14 @@ static void flock_finalize_provider(void* p)
     free(provider->group);
     margo_instance_id mid = provider->mid;
     free(provider);
-    margo_info(mid, "[flock] Provider successfuly finalized");
+    margo_trace(mid, "[flock] Provider successfuly finalized");
 }
 
 flock_return_t flock_provider_destroy(
         flock_provider_t provider)
 {
     margo_instance_id mid = provider->mid;
-    margo_info(mid, "[flock] Destroying provider");
+    margo_trace(mid, "[flock] Destroying provider");
     /* pop the finalize callback */
     margo_provider_pop_finalize_callback(provider->mid, provider);
     /* call the callback */

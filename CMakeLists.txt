@@ -12,6 +12,7 @@ option (ENABLE_TESTS    "Build tests" OFF)
 option (ENABLE_EXAMPLES "Build examples" OFF)
 option (ENABLE_BEDROCK  "Build bedrock module" OFF)
 option (ENABLE_COVERAGE "Build with coverage" OFF)
+option (ENABLE_MPI      "Build with MPI support" OFF)
 
 # add our cmake module directory to the path
 set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
@@ -54,6 +55,10 @@ endif ()
 pkg_check_modules (margo REQUIRED IMPORTED_TARGET margo)
 # search for json-c
 pkg_check_modules (json-c REQUIRED IMPORTED_TARGET json-c)
+
+if (ENABLE_MPI)
+    find_package (MPI REQUIRED)
+endif ()
 
 # library version set here (e.g. for shared libs).
 set (FLOCK_VERSION_MAJOR 0)

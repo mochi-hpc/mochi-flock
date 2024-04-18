@@ -36,12 +36,9 @@ typedef struct flock_provider* flock_provider_t;
 struct flock_provider_args {
     ABT_pool            pool;
     union {
-        flock_group_view_t* initial_view;
-        uintptr_t           mpi_comm;
-        struct {
-            flock_group_view_t* existing_view;
-            size_t              claim_rank;
-        } join;
+        flock_group_view_t*  initial_view;
+        uintptr_t            mpi_comm;
+        flock_group_handle_t join_group;
     } bootstrap;
     flock_backend_impl* backend;
 };
@@ -53,44 +50,36 @@ struct flock_provider_args {
 }
 
 /**
- * The constants below can be used as desired_rank in flock_provider_join.
- * - FLOCK_RANK_ANY: the new member may be assigned any available rank
- * - FLOCK_RANK_NEXT: the new member will be assigned a rank greater than any existing rank
- * - FLOCK_RANK_FILL: the new member will be assigned the smallest rank that is not in use,
- *   filling any potential gap in the list of members.
- */
-#define FLOCK_RANK_ANY  SIZE_MAX
-#define FLOCK_RANK_NEXT (SIZE_MAX-1)
-#define FLOCK_RANK_FILL (SIZE_MAX-2)
-
-/**
  * @brief Creates a new FLOCK provider.
  *
  * The config parameter must have the following format.
  *
  * ```
  * {
- *     "type": "static", // or another backend type
  *     "bootstrap": "<method>",
  *     "group": {
- *          // backend-specified configuration
- *     }
+ *         "type": "static", // or another backend type
+ *         "config": { ... } // backend-specified configuration
+ *     },
+ *     "file": "<path>"
  * }
  * ```
  *
  * The bootstrap method may be one of the following:
- * - "init": use args->bootstrap.initial_view as initial view of the group.
+ * - "self": the provider will form a group with only itself as the member.
+ * - "view": use args->bootstrap.initial_view as initial view of the group.
  *   All the providers in the view must be registered at the same time and
  *   with the same configuration and initial view. If different configurations
  *   or initial views are provided to each provider, the result is undefined.
- * - "mpi": use args->bootstrap.mpi (cast to an MPI_Comm) to initialize
+ *   The provider that is being registered must be part of the initial view.
+ * - "mpi": use args->bootstrap.mpi_comm (cast to an MPI_Comm) to initialize
  *   the initial view of the group. This method will involve collective
- *   communications across processes of the specified communicator.
- * - "join": use args->bootstrap.join.existing_view as the view of an existing
- *   group that the created provider must join.  args->bootstrap.join.claim_rank
- *   may be set to a rank the caller wants the new provider to have. This field
- *   may be set to FLOCK_RANK_ANY, FLOCK_RANK_NEXT, or FLOCK_RANK_FILL to
- *   have a rank automatically selected using different strategies.
+ *   communications across processes of the specified communicator. If the
+ *   mpi_comm is set to NULL, MPI_COMM_WORLD will be used by default.
+ *   MPI must have been initialized for this method to work.
+ * - "join": use args->bootstrap.join_group as the group handle of an existing
+ *   group that the created provider must join, or if provided.
+ * - "file": join the group represented by the group file.
  *
  * @param[in] mid Margo instance
  * @param[in] provider_id provider id

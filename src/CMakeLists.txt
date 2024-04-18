@@ -48,6 +48,10 @@ target_include_directories (flock-server BEFORE PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>)
 target_include_directories (flock-server BEFORE PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+if (ENABLE_MPI)
+    target_compile_definitions (flock-server PRIVATE ENABLE_MPI)
+    target_link_libraries (flock-server PUBLIC MPI::MPI_C)
+endif ()
 set_target_properties (flock-server
     PROPERTIES VERSION ${FLOCK_VERSION}
     SOVERSION ${FLOCK_VERSION_MAJOR})

@@ -21,7 +21,7 @@ struct TestGroup {
                     "type":"static",
                     "config":{}
                 },
-                "bootstrap": "init"
+                "bootstrap": "view"
               })") {
 
         // get address of current process

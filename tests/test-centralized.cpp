@@ -45,7 +45,8 @@ TEST_CASE("Test group handle for centralized group", "[centralize]") {
                     "ping_interval_ms": [800.0, 1000.0],
                     "ping_max_num_timeouts": 2
                 }
-            }
+            },
+            "bootstrap": "view"
            })");
 
     SECTION("Create client and group handle") {
