@@ -9,8 +9,7 @@
 #include <catch2/catch_all.hpp>
 #include <flock/flock-group-view.h>
 #include <unordered_map>
-//#include <flock/flock-mpi.h>
-#include <mpi.h>
+#include <flock/flock-bootstrap-mpi.h>
 
 struct TestContext {
 
@@ -54,7 +53,7 @@ TEST_CASE("Test bootstrap with MPI", "[mpi-bootstrap]") {
         REQUIRE(view.metadata.capacity == 0);
         REQUIRE(view.metadata.data == nullptr);
         REQUIRE(view.digest == 0);
-        /*
+
         flock_return_t ret = flock_group_view_init_from_mpi(context->mid, 42+rank, MPI_COMM_WORLD, &view);
         REQUIRE(ret == FLOCK_SUCCESS);
 
@@ -70,7 +69,6 @@ TEST_CASE("Test bootstrap with MPI", "[mpi-bootstrap]") {
         margo_addr_to_string(context->mid, self_addr, &self_addr_size, context->addr);
 
         REQUIRE(strcmp(me->address, self_addr) == 0);
-        */
     }
 
     MPI_Finalize();
