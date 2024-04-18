@@ -19,17 +19,29 @@ struct file_serializer_data {
 static inline void file_serializer(void* uargs, const char* content, size_t size)
 {
     struct file_serializer_data* data = (struct file_serializer_data*)uargs;
-    FILE* file = fopen(data->filename, "w");
+    size_t l = strlen(data->filename);
+    char* filename = calloc(l+5, 1);
+    sprintf(filename, "%s.swp", data->filename);
+    FILE* file = fopen(filename, "w");
     if(!file) {
         data->ret = FLOCK_ERR_ALLOCATION;
-        return;
+        goto finish;
     }
     size_t written = fwrite(content, 1, size, file);
     if(written != size) {
         data->ret = FLOCK_ERR_OTHER;
-        return;
+        goto finish;
     }
     fclose(file);
+    file = NULL;
+    if(rename(filename, data->filename) != 0) {
+        data->ret = FLOCK_ERR_OTHER;
+        goto finish;
+    }
+    data->ret = FLOCK_SUCCESS;
+finish:
+    if(file) fclose(file);
+    free(filename);
 }
 
 #endif
