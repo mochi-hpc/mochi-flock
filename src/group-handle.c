@@ -5,6 +5,7 @@
  */
 #include "types.h"
 #include "client.h"
+#include "file-serialize.h"
 #include "flock/flock-group-view.h"
 #include "flock/flock-client.h"
 #include <json-c/json.h>
@@ -353,27 +354,6 @@ flock_return_t flock_group_serialize(
 
     json_object_put(view);
     return FLOCK_SUCCESS;
-}
-
-struct file_serializer_data {
-    const char*    filename;
-    flock_return_t ret;
-};
-
-static void file_serializer(void* uargs, const char* content, size_t size)
-{
-    struct file_serializer_data* data = (struct file_serializer_data*)uargs;
-    FILE* file = fopen(data->filename, "w");
-    if(!file) {
-        data->ret = FLOCK_ERR_ALLOCATION;
-        return;
-    }
-    size_t written = fwrite(content, 1, size, file);
-    if(written != size) {
-        data->ret = FLOCK_ERR_OTHER;
-        return;
-    }
-    fclose(file);
 }
 
 flock_return_t flock_group_serialize_to_file(
