@@ -5,7 +5,7 @@
  */
 #include "types.h"
 #include "client.h"
-#include "file-serialize.h"
+#include "view-serialize.h"
 #include "flock/flock-group-view.h"
 #include "flock/flock-client.h"
 #include <json-c/json.h>
@@ -95,6 +95,9 @@ flock_return_t flock_group_handle_create_from_file(
         uint32_t mode,
         flock_group_handle_t* handle)
 {
+    if(client == FLOCK_CLIENT_NULL)
+        return FLOCK_ERR_INVALID_ARGS;
+
     // Read the content of the file into a buffer
     char* buffer = NULL;
     size_t length;
@@ -132,6 +135,13 @@ flock_return_t flock_group_handle_create_from_serialized(
     if(client == FLOCK_CLIENT_NULL)
         return FLOCK_ERR_INVALID_ARGS;
 
+    flock_group_view_t view = FLOCK_GROUP_VIEW_INITIALIZER;
+    uint64_t credentials = 0;
+    flock_return_t ret = group_view_from_string(
+        client->mid, serialized_view, view_size, &view, &credentials);
+    if(ret != FLOCK_SUCCESS) return ret;
+
+#if 0
     hg_return_t hret;
 
     // Parse the content of the file
@@ -266,6 +276,7 @@ flock_return_t flock_group_handle_create_from_serialized(
         flock_group_view_add_metadata(&view, metadata_key,
             json_object_get_string(metadata_value));
     }
+#endif
 
     flock_group_handle_t rh =
         (flock_group_handle_t)calloc(1, sizeof(*rh));
@@ -277,9 +288,10 @@ flock_return_t flock_group_handle_create_from_serialized(
 
     const char* addr = view.members.data[0].address;
 
-    hret = margo_addr_lookup(client->mid, addr, &(rh->addr));
+    hg_return_t hret = margo_addr_lookup(client->mid, addr, &(rh->addr));
     if(hret != HG_SUCCESS) {
         free(rh);
+        flock_group_view_clear(&view);
         return FLOCK_ERR_FROM_MERCURY;
     }
 
@@ -301,7 +313,6 @@ flock_return_t flock_group_handle_create_from_serialized(
     *handle = rh;
 
 finish:
-    json_object_put(content);
     return ret;
 }
 
@@ -310,63 +321,29 @@ flock_return_t flock_group_serialize(
         void (*serializer)(void*, const char*, size_t),
         void* context)
 {
-    struct json_object* view = json_object_new_object();
-    if(!serializer) return FLOCK_ERR_INVALID_ARGS;
-
     FLOCK_GROUP_VIEW_LOCK(&handle->view);
-    struct json_object* members = json_object_new_array_ext(handle->view.members.size);
-    json_object_object_add(view, "members", members);
-    for(size_t i=0; i < handle->view.members.size; ++i) {
-        struct json_object* member = json_object_new_object();
-        json_object_object_add(member,
-            "address", json_object_new_string(handle->view.members.data[i].address));
-        json_object_object_add(member,
-            "provider_id", json_object_new_uint64(handle->view.members.data[i].provider_id));
-        json_object_object_add(member,
-            "rank", json_object_new_uint64(handle->view.members.data[i].rank));
-        json_object_array_add(members, member);
-    }
-
-    hg_class_t* hg_class = margo_get_class(handle->client->mid);
-    json_object_object_add(
-        view, "transport", json_object_new_string(HG_Class_get_protocol(hg_class)));
-
-    json_object_object_add(
-        view, "credentials", json_object_new_int64(handle->credentials));
-
-    struct json_object* metadata = json_object_new_object();
-    for(size_t i=0; i < handle->view.metadata.size; ++i) {
-        json_object_object_add(
-            metadata, handle->view.metadata.data[i].key,
-            json_object_new_string(handle->view.metadata.data[i].value));
-    }
-    json_object_object_add(view, "metadata", metadata);
-
-    size_t len;
-    const char* str = json_object_to_json_string_length(view, JSON_C_TO_STRING_NOSLASHESCAPE, &len);
-    if(!str) {
-        FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
-        return FLOCK_ERR_ALLOCATION;
-    }
-
+    flock_return_t ret =  group_view_serialize(
+            handle->client->mid,
+            handle->credentials,
+            &handle->view,
+            serializer,
+            context);
     FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
-    serializer(context, str, len);
-
-    json_object_put(view);
-    return FLOCK_SUCCESS;
+    return ret;
 }
 
 flock_return_t flock_group_serialize_to_file(
         flock_group_handle_t handle,
         const char* filename)
 {
-    struct file_serializer_data context = {
-        .filename = filename,
-        .ret = FLOCK_SUCCESS
-    };
-    flock_return_t ret = flock_group_serialize(handle, file_serializer, &context);
-    if(ret != FLOCK_SUCCESS) return ret;
-    else return context.ret;
+    FLOCK_GROUP_VIEW_LOCK(&handle->view);
+    flock_return_t ret =  group_view_serialize_to_file(
+            handle->client->mid,
+            handle->credentials,
+            &handle->view,
+            filename);
+    FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
+    return ret;
 }
 
 flock_return_t flock_group_size(

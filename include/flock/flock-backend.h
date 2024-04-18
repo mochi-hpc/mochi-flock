@@ -37,6 +37,7 @@ typedef struct flock_backend_init_args {
     uint16_t                   provider_id;
     ABT_pool                   pool;
     struct json_object*        config;
+    bool                       join;
     flock_group_view_t         initial_view;
     flock_membership_update_fn member_update_callback;
     flock_metadata_update_fn   metadata_update_callback;

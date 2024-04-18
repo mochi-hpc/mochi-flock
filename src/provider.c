@@ -6,7 +6,7 @@
 #include "flock/flock-server.h"
 #include "provider.h"
 #include "types.h"
-#include "bootstrap.h"
+#include "view-serialize.h"
 
 /* backends that we want to add at compile time */
 #include "static/static-backend.h"
@@ -34,6 +34,20 @@ static void dispatch_metadata_update(
 static DECLARE_MARGO_RPC_HANDLER(flock_get_view_ult)
 static void flock_get_view_ult(hg_handle_t h);
 
+struct serialize_view_to_file_args {
+    margo_instance_id mid;
+    const char* filename;
+    uint64_t credentials;
+};
+
+static inline void serialize_view_to_file(void* uargs, const flock_group_view_t* view)
+{
+    struct serialize_view_to_file_args* args = (struct serialize_view_to_file_args*)uargs;
+    flock_return_t ret = group_view_serialize_to_file(args->mid, args->credentials, view, args->filename);
+    if(ret != FLOCK_SUCCESS) {
+        margo_warning(args->mid, "[flock] Could not write group file \"%s\"", args->filename);
+    }
+}
 
 flock_return_t flock_provider_register(
         margo_instance_id mid,
@@ -48,6 +62,7 @@ flock_return_t flock_provider_register(
     hg_id_t id;
     hg_bool_t flag;
     flock_return_t ret = FLOCK_SUCCESS;
+    hg_return_t hret = HG_SUCCESS;
     struct json_object* config = NULL;
     struct json_object* group_config = NULL;
 
@@ -61,6 +76,8 @@ flock_return_t flock_provider_register(
         .member_update_callback = dispatch_member_update,
         .metadata_update_callback = dispatch_metadata_update
     };
+
+    FLOCK_GROUP_VIEW_MOVE(a.initial_view, &backend_init_args.initial_view);
 
     margo_trace(mid, "[flock] Registering provider with provider id %u", provider_id);
 
@@ -111,21 +128,6 @@ flock_return_t flock_provider_register(
     }
 
     /* process the configuration */
-
-    /* "bootstrap" field */
-    struct json_object* bootstrap = json_object_object_get(config, "bootstrap");
-    const char* bootstrap_method = "self";
-    if(bootstrap) {
-        if(!json_object_is_type(bootstrap, json_type_string)) {
-            margo_error(mid, "[flock] \"bootstrap\" field should be of type string");
-            ret = FLOCK_ERR_INVALID_CONFIG;
-            goto finish;
-        }
-        bootstrap_method = json_object_get_string(bootstrap);
-    } else {
-        margo_warning(
-            mid, "[flock] \"bootstrap\" method not specified, defaulting to \"%s\"", bootstrap_method);
-    }
 
     /* "file" field */
     const char* filename = NULL;
@@ -197,13 +199,30 @@ flock_return_t flock_provider_register(
     /* FIXME: add other RPC registration here */
     /* ... */
 
-    /* bootstrap the initial view */
-    ret = flock_bootstrap_group_view(
-        bootstrap_method, mid, provider_id, &a,
-        filename, &backend_init_args.initial_view);
-    if(ret != FLOCK_SUCCESS) {
-        margo_error(mid, "[flock] Could not bootstrap initial view");
+    /* find out if this provider is already part of the initial view */
+    char self_addr_str[256];
+    hg_size_t self_addr_str_size = 256;
+    hg_addr_t self_addr = HG_ADDR_NULL;
+    hret = margo_addr_self(mid, &self_addr);
+    if(hret != HG_SUCCESS) {
+        margo_error(mid, "[flock] Could not get self address");
         goto finish;
+    }
+    hret = margo_addr_to_string(mid, self_addr_str, &self_addr_str_size, self_addr);
+    margo_addr_free(mid, self_addr);
+    if(hret != HG_SUCCESS) {
+        margo_error(mid, "[flock] Could convert self address into a string");
+        goto finish;
+    }
+    backend_init_args.join = true;
+    bool is_first = false;
+    for(size_t i = 0; i < backend_init_args.initial_view.members.size; ++i) {
+        flock_member_t* member = &backend_init_args.initial_view.members.data[i];
+        if(member->provider_id != provider_id) continue;
+        if(strcmp(member->address, self_addr_str) != 0) continue;
+        backend_init_args.join = false;
+        is_first = i == 0;
+        break;
     }
 
     /* create the new group's context */
@@ -224,6 +243,17 @@ flock_return_t flock_provider_register(
 
     /* set the provider's identity */
     margo_provider_register_identity(mid, provider_id, "flock");
+
+    struct serialize_view_to_file_args ser_args = {
+        .mid         = mid,
+        .filename    = filename,
+        .credentials = a.credentials
+    };
+
+    /* write the current view of the group */
+    if(is_first && filename) {
+        p->group->fn->get_view(context, serialize_view_to_file, &ser_args);
+    }
 
     if(provider)
         *provider = p;

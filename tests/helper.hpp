@@ -20,8 +20,7 @@ struct TestGroup {
                 "group":{
                     "type":"static",
                     "config":{}
-                },
-                "bootstrap": "view"
+                }
               })") {
 
         // get address of current process
@@ -54,7 +53,7 @@ struct TestGroup {
             flock_group_view_add_metadata(&initial_view, "shane", "snyder");
 
             struct flock_provider_args args = FLOCK_PROVIDER_ARGS_INIT;
-            args.bootstrap.initial_view = &initial_view;
+            args.initial_view = &initial_view;
 
             flock_return_t ret = flock_provider_register(
                     mid, i+1, provider_config, &args,

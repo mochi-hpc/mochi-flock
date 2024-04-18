@@ -34,18 +34,16 @@ typedef struct flock_provider* flock_provider_t;
  * JSON configuration passed to flock_provider_register.
  */
 struct flock_provider_args {
-    ABT_pool            pool;
-    union {
-        flock_group_view_t*  initial_view;
-        uintptr_t            mpi_comm;
-        flock_group_handle_t join_group;
-    } bootstrap;
-    flock_backend_impl* backend;
+    ABT_pool             pool;
+    flock_group_view_t*  initial_view;
+    uint64_t             credentials;
+    flock_backend_impl*  backend;
 };
 
 #define FLOCK_PROVIDER_ARGS_INIT { \
     /* .pool = */ ABT_POOL_NULL,   \
-    /* .bootstrap = */ {NULL},     \
+    /* .initial_view = */ NULL,    \
+    /* .credentials = */ 0,        \
     /* .backend = */ NULL          \
 }
 

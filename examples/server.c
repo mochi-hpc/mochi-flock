@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <margo.h>
 #include <flock/flock-server.h>
+#include <flock/flock-bootstrap.h>
 
 int main(int argc, char** argv)
 {
@@ -27,8 +28,9 @@ int main(int argc, char** argv)
 
     struct flock_provider_args args = FLOCK_PROVIDER_ARGS_INIT;
     flock_group_view_t initial_view = FLOCK_GROUP_VIEW_INITIALIZER;
-    args.bootstrap.initial_view = &initial_view;
-    flock_group_view_add_member(&initial_view, 0, 42, addr_str);
+    args.initial_view = &initial_view;
+
+    flock_group_view_init_from_self(mid, 42, &initial_view);
 
     const char* config = "{ \"group\":{ \"type\":\"static\", \"config\":{} } }";
 

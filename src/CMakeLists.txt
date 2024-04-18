@@ -1,5 +1,6 @@
 # set source files
 set (server-src-files
+     bootstrap.c
      provider.c)
 
 set (client-src-files
