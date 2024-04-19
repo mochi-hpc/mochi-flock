@@ -13,6 +13,10 @@ check_required_components (flock)
 include (CMakeFindDependencyMacro)
 find_dependency (PkgConfig)
 pkg_check_modules (margo REQUIRED margo)
+pkg_check_modules (json-c REQUIRED json-c)
+if (@ENABLE_MPI@)
+  find_dependency (MPI)
+endif ()
 
 # FIXME: Any other dependencies should be added here
 

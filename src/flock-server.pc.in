@@ -4,9 +4,9 @@ libdir=${prefix}/lib
 includedir=${prefix}/include
 
 Name: flock-server
-Description: <insert description here>
+Description: Mochi's group membership component.
 Version: @FLOCK_VERSION@
 
-Requires: margo flock-client
+Requires: margo flock-client json-c
 Libs: -L${libdir} @SERVER_PRIVATE_LIBS@
 Cflags: -I${includedir}
