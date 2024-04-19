@@ -14,6 +14,13 @@ option (ENABLE_BEDROCK  "Build bedrock module" OFF)
 option (ENABLE_COVERAGE "Build with coverage" OFF)
 option (ENABLE_MPI      "Build with MPI support" OFF)
 
+# library version set here (e.g. for shared libs).
+set (FLOCK_VERSION_MAJOR 0)
+set (FLOCK_VERSION_MINOR 1)
+set (FLOCK_VERSION_PATCH 0)
+set (FLOCK_VERSION
+     "${FLOCK_VERSION_MAJOR}.${FLOCK_VERSION_MINOR}.${FLOCK_VERSION_PATCH}")
+
 # add our cmake module directory to the path
 set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
      "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
@@ -59,13 +66,6 @@ pkg_check_modules (json-c REQUIRED IMPORTED_TARGET json-c)
 if (ENABLE_MPI)
     find_package (MPI REQUIRED)
 endif ()
-
-# library version set here (e.g. for shared libs).
-set (FLOCK_VERSION_MAJOR 0)
-set (FLOCK_VERSION_MINOR 1)
-set (FLOCK_VERSION_PATCH 0)
-set (FLOCK_VERSION
-     "${FLOCK_VERSION_MAJOR}.${FLOCK_VERSION_MINOR}.${FLOCK_VERSION_PATCH}")
 
 add_subdirectory (src)
 if (${ENABLE_TESTS})
