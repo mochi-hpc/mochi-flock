@@ -20,30 +20,13 @@ static flock_return_t static_create_group(
         flock_backend_init_args_t* args,
         void** context)
 {
-    static_context* ctx = (static_context*)calloc(1, sizeof(*ctx));
-    if(!ctx) return FLOCK_ERR_ALLOCATION;
-
-    // Check that the current process is part of the group
-    hg_addr_t addr = HG_ADDR_NULL;
-    char      addr_str[256];
-    hg_size_t addr_str_size = 256;
-    hg_return_t hret = margo_addr_self(args->mid, &addr);
-    if(hret != HG_SUCCESS) return FLOCK_ERR_FROM_MERCURY;
-    hret = margo_addr_to_string(args->mid, addr_str, &addr_str_size, addr);
-    margo_addr_free(args->mid, addr);
-    if(hret != HG_SUCCESS) return FLOCK_ERR_FROM_MERCURY;
-
-    bool found = false;
-    for(size_t i = 0; i < args->initial_view.members.size; ++i) {
-        if(args->initial_view.members.data[i].provider_id == args->provider_id
-        && strcmp(args->initial_view.members.data[i].address, addr_str) == 0) {
-            found = true;
-            break;
-        }
+    if(args->join) {
+        margo_error(args->mid, "[flock] Cannot join a static group");
+        return FLOCK_ERR_OP_FORBIDDEN;
     }
 
-    // Static groups don't allow joining
-    if(!found) return FLOCK_ERR_NOT_A_MEMBER;
+    static_context* ctx = (static_context*)calloc(1, sizeof(*ctx));
+    if(!ctx) return FLOCK_ERR_ALLOCATION;
 
     ctx->config = json_object_new_object();
     FLOCK_GROUP_VIEW_MOVE(&args->initial_view, &ctx->view);
@@ -79,28 +62,6 @@ static flock_return_t static_get_view(
     return FLOCK_SUCCESS;
 }
 
-static flock_return_t static_add_member(
-    void* ctx, uint64_t rank, const char* address, uint16_t provider_id)
-{
-    // LCOV_EXCL_START
-    (void)ctx;
-    (void)rank;
-    (void)address;
-    (void)provider_id;
-    return FLOCK_ERR_OP_UNSUPPORTED;
-    // LCOV_EXCL_END
-}
-
-static flock_return_t static_remove_member(
-    void* ctx, uint64_t rank)
-{
-    // LCOV_EXCL_START
-    (void)ctx;
-    (void)rank;
-    return FLOCK_ERR_OP_UNSUPPORTED;
-    // LCOV_EXCL_END
-}
-
 static flock_return_t static_add_metadata(
     void* ctx, const char* key, const char* value)
 {
@@ -123,15 +84,13 @@ static flock_return_t static_remove_metadata(
 }
 
 static flock_backend_impl static_backend = {
-    .name               = "static",
-    .init_group         = static_create_group,
-    .destroy_group      = static_destroy_group,
-    .get_config         = static_get_config,
-    .get_view           = static_get_view,
-    .add_member         = static_add_member,
-    .remove_member      = static_remove_member,
-    .add_metadata       = static_add_metadata,
-    .remove_metadata    = static_remove_metadata
+    .name            = "static",
+    .init_group      = static_create_group,
+    .destroy_group   = static_destroy_group,
+    .get_config      = static_get_config,
+    .get_view        = static_get_view,
+    .add_metadata    = static_add_metadata,
+    .remove_metadata = static_remove_metadata
 };
 
 flock_return_t flock_register_static_backend(void)

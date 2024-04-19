@@ -41,7 +41,7 @@ TEST_CASE("Test group handle for centralized group", "[centralize]") {
             "group":{
                 "type":"centralized",
                 "config":{
-                    "ping_timeout_ms": [800.0, 1000.0],
+                    "ping_timeout_ms": 400.0,
                     "ping_interval_ms": [800.0, 1000.0],
                     "ping_max_num_timeouts": 2
                 }

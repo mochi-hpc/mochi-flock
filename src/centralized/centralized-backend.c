@@ -15,7 +15,7 @@
 #define RAND_BETWEEN(x, y) ((x) + (((double)rand()) / RAND_MAX)*(y-x))
 
 /**
- * @brief The "centralized" backend uses the member with the lowest rank
+ * @brief The "centralized" backend uses the member with rank 0
  * as a centralized authority that is supposed to hold the most up to date
  * group view. The flock_group_view_t in all the other processes is a
  * read-only, cached version. The primary member will ping the secondary
@@ -34,8 +34,7 @@ typedef struct centralized_context {
     hg_id_t              ping_rpc_id;
     hg_id_t              get_view_rpc_id;
     /* extracted from configuration */
-    double ping_timeout_ms_min;
-    double ping_timeout_ms_max;
+    double ping_timeout_ms;
     double ping_interval_ms_min;
     double ping_interval_ms_max;
     unsigned ping_max_num_timeouts;
@@ -78,19 +77,44 @@ static void ping_rpc_ult(hg_handle_t h);
 
 static void ping_timer_callback(void* args);
 
+static flock_return_t get_view(centralized_context* ctx);
 static DECLARE_MARGO_RPC_HANDLER(get_view_rpc_ult)
 static void get_view_rpc_ult(hg_handle_t h);
 
 static flock_return_t centralized_destroy_group(void* ctx);
 
+/**
+ * The configuration for a centralized group may look like the following:
+ *
+ * ```
+ * {
+ *    "ping_timeout_ms": X,
+ *    "ping_interval_ms": Y,
+ *    "ping_max_num_timeouts": Z
+ * }
+ * ```
+ *
+ * - ping_timeout_ms is the timeout value when sending a ping RPC to a member.
+ * - ping_interval_ms is the time to wait between to ping RPCs to the same follower.
+ * - ping_max_num_timeouts is the number of RPC timeouts before the member is considered dead.
+ * ping_interval_ms may be a list of two values [a,b] instead of a single value Y. If a list
+ * is provided, the interval will be drawn randomly from a uniform distribution in the [a,b]
+ * range each time.
+ */
 static flock_return_t centralized_create_group(
         flock_backend_init_args_t* args,
         void** context)
 {
     flock_return_t ret = FLOCK_SUCCESS;
 
-    double   ping_timeout_ms_min   = 1000.0;
-    double   ping_timeout_ms_max   = 1000.0;
+    // check that the initial view has a rank 0
+    if(args->initial_view.members.size == 0
+    || args->initial_view.members.data[0].rank != 0) {
+        margo_error(args->mid, "[flock] Rank 0 not found for centralized backend");
+        return FLOCK_ERR_INVALID_ARGS;
+    }
+
+    double   ping_timeout_ms_val   = 1000.0;
     double   ping_interval_ms_min  = 1000.0;
     double   ping_interval_ms_max  = 1000.0;
     unsigned ping_max_num_timeouts = 3;
@@ -102,32 +126,22 @@ static flock_return_t centralized_create_group(
             return FLOCK_ERR_INVALID_CONFIG;
         }
         // process "ping_timeout_ms"
-        struct json_object* ping_timeout_ms_pair =
+        struct json_object* ping_timeout_ms =
             json_object_object_get(args->config, "ping_timeout_ms");
-        if(ping_timeout_ms_pair) {
-            if(json_object_is_type(ping_timeout_ms_pair, json_type_double)) {
-                // ping_timeout_ms is a single number
-                ping_timeout_ms_min = ping_timeout_ms_max = json_object_get_double(ping_timeout_ms_pair);
-            } else if(json_object_is_type(ping_timeout_ms_pair, json_type_array)
-            && json_object_array_length(ping_timeout_ms_pair) == 2) {
-                // ping_timeout_ms is an array of two numbers (min and max)
-                struct json_object* a = json_object_array_get_idx(ping_timeout_ms_pair, 0);
-                struct json_object* b = json_object_array_get_idx(ping_timeout_ms_pair, 1);
-                if(!(json_object_is_type(a, json_type_double) && json_object_is_type(b, json_type_double))) {
-                    margo_error(args->mid,
+        if(ping_timeout_ms) {
+            if(json_object_is_type(ping_timeout_ms, json_type_double)) {
+                ping_timeout_ms_val = json_object_get_double(ping_timeout_ms);
+            } else {
+                margo_error(args->mid,
                         "[flock] In centralized backend configuration: "
-                        "\"ping_timeout_ms\" should be an array of two numbers");
-                    return FLOCK_ERR_INVALID_CONFIG;
-                }
-                ping_timeout_ms_min = json_object_get_double(a);
-                ping_timeout_ms_max = json_object_get_double(b);
-                if(ping_timeout_ms_min > ping_timeout_ms_max
-                || ping_timeout_ms_min < 0 || ping_timeout_ms_max < 0) {
-                    margo_error(args->mid,
+                        "\"ping_timeout_ms\" should be a number");
+                return FLOCK_ERR_INVALID_CONFIG;
+            }
+            if(ping_timeout_ms_val < 0) {
+                margo_error(args->mid,
                         "[flock] In centralized backend configuration: "
-                        "invalid values or order in \"ping_timeout_ms\" array");
-                    return FLOCK_ERR_INVALID_CONFIG;
-                }
+                        "\"ping_timeout_ms\" should be positive");
+                return FLOCK_ERR_INVALID_CONFIG;
             }
         }
         // process "ping_interval_ms"
@@ -182,17 +196,16 @@ static flock_return_t centralized_create_group(
 
     // fill a json_object structure with the final configuration
     struct json_object* config = json_object_new_object();
-    if(ping_timeout_ms_min != ping_timeout_ms_max) {
-        struct json_object* ping_timeout_ms_pair = json_object_new_array_ext(2);
-        json_object_array_add(ping_timeout_ms_pair, json_object_new_double(ping_timeout_ms_min));
-        json_object_array_add(ping_timeout_ms_pair, json_object_new_double(ping_timeout_ms_max));
-        json_object_object_add(config, "ping_timeout_ms", ping_timeout_ms_pair);
-    }
+    json_object_object_add(config, "ping_timeout_ms",
+        json_object_new_double(ping_timeout_ms_val));
     if(ping_interval_ms_min != ping_interval_ms_max) {
         struct json_object* ping_interval_ms_pair = json_object_new_array_ext(2);
         json_object_array_add(ping_interval_ms_pair, json_object_new_double(ping_interval_ms_min));
         json_object_array_add(ping_interval_ms_pair, json_object_new_double(ping_interval_ms_max));
         json_object_object_add(config, "ping_interval_ms", ping_interval_ms_pair);
+    } else {
+        json_object_object_add(config, "ping_interval_ms",
+                json_object_new_double(ping_interval_ms_min));
     }
     json_object_object_add(config, "ping_max_num_timeouts",
         json_object_new_uint64(ping_max_num_timeouts));
@@ -238,8 +251,7 @@ static flock_return_t centralized_create_group(
 
     /* copy the configuration */
     ctx->config = config;
-    ctx->ping_timeout_ms_min   = ping_timeout_ms_min;
-    ctx->ping_timeout_ms_max   = ping_timeout_ms_max;
+    ctx->ping_timeout_ms   = ping_timeout_ms_val;
     ctx->ping_interval_ms_min  = ping_interval_ms_min;
     ctx->ping_interval_ms_max  = ping_interval_ms_max;
     ctx->ping_max_num_timeouts = ping_max_num_timeouts;
@@ -280,6 +292,9 @@ static flock_return_t centralized_create_group(
                 state->context->ping_interval_ms_max);
             margo_timer_start(state->ping_timer, interval);
         }
+    } else if(args->join) {
+        ret = get_view(ctx);
+        if(ret != FLOCK_SUCCESS) goto error;
     }
 
     *context = ctx;
@@ -308,9 +323,7 @@ static void ping_timer_callback(void* args)
         goto restart_timer;
     }
     margo_request req = MARGO_REQUEST_NULL;
-    double timeout = RAND_BETWEEN(
-        state->context->ping_timeout_ms_min,
-        state->context->ping_timeout_ms_max);
+    double timeout = state->context->ping_timeout_ms;
     hret = margo_provider_iforward_timed(
             state->provider_id,
             state->last_ping_handle,
@@ -382,25 +395,7 @@ static void ping_rpc_ult(hg_handle_t h)
         goto finish;
     }
 
-    hg_return_t hret   = HG_SUCCESS;
-    hg_handle_t handle = HG_HANDLE_NULL;
-    hret = margo_create(ctx->mid, ctx->primary.address, ctx->get_view_rpc_id, &handle);
-    if(hret != HG_SUCCESS) goto finish;
-
-    hret = margo_provider_forward(ctx->primary.provider_id, handle, NULL);
-    if(hret != HG_SUCCESS) {
-        margo_destroy(handle);
-        goto finish;
-    }
-
-    hret = margo_get_output(handle, &ctx->view);
-    if(hret != HG_SUCCESS) {
-        margo_destroy(handle);
-        goto finish;
-    }
-
-    margo_free_output(handle, NULL);
-    margo_destroy(handle);
+    get_view(ctx);
 
 finish:
     margo_wait(req);
@@ -424,6 +419,32 @@ static void get_view_rpc_ult(hg_handle_t h)
 
 finish:
     margo_destroy(h);
+}
+
+static flock_return_t get_view(centralized_context* ctx)
+{
+    hg_return_t hret   = HG_SUCCESS;
+    hg_handle_t handle = HG_HANDLE_NULL;
+    hret = margo_create(ctx->mid, ctx->primary.address, ctx->get_view_rpc_id, &handle);
+    if(hret != HG_SUCCESS) goto finish;
+
+    hret = margo_provider_forward(ctx->primary.provider_id, handle, NULL);
+    if(hret != HG_SUCCESS) {
+        margo_destroy(handle);
+        goto finish;
+    }
+
+    hret = margo_get_output(handle, &ctx->view);
+    if(hret != HG_SUCCESS) {
+        margo_destroy(handle);
+        goto finish;
+    }
+
+    margo_free_output(handle, NULL);
+
+finish:
+    margo_destroy(handle);
+    return FLOCK_SUCCESS;
 }
 
 static flock_return_t centralized_destroy_group(void* ctx)
@@ -477,30 +498,8 @@ static flock_return_t centralized_get_view(
     return FLOCK_SUCCESS;
 }
 
-static flock_return_t centralized_add_member(
-    void* ctx, uint64_t rank, const char* address, uint16_t provider_id)
-{
-    // LCOV_EXCL_START
-    (void)ctx;
-    (void)rank;
-    (void)address;
-    (void)provider_id;
-    return FLOCK_ERR_OP_UNSUPPORTED;
-    // LCOV_EXCL_END
-}
-
-static flock_return_t centralized_remove_member(
-    void* ctx, uint64_t rank)
-{
-    // LCOV_EXCL_START
-    (void)ctx;
-    (void)rank;
-    return FLOCK_ERR_OP_UNSUPPORTED;
-    // LCOV_EXCL_END
-}
-
 static flock_return_t centralized_add_metadata(
-    void* ctx, const char* key, const char* value)
+        void* ctx, const char* key, const char* value)
 {
     // LCOV_EXCL_START
     (void)ctx;
@@ -511,7 +510,7 @@ static flock_return_t centralized_add_metadata(
 }
 
 static flock_return_t centralized_remove_metadata(
-    void* ctx, const char* key)
+        void* ctx, const char* key)
 {
     // LCOV_EXCL_START
     (void)ctx;
@@ -521,15 +520,13 @@ static flock_return_t centralized_remove_metadata(
 }
 
 static flock_backend_impl centralized_backend = {
-    .name               = "centralized",
-    .init_group         = centralized_create_group,
-    .destroy_group      = centralized_destroy_group,
-    .get_config         = centralized_get_config,
-    .get_view           = centralized_get_view,
-    .add_member         = centralized_add_member,
-    .remove_member      = centralized_remove_member,
-    .add_metadata       = centralized_add_metadata,
-    .remove_metadata    = centralized_remove_metadata
+    .name            = "centralized",
+    .init_group      = centralized_create_group,
+    .destroy_group   = centralized_destroy_group,
+    .get_config      = centralized_get_config,
+    .get_view        = centralized_get_view,
+    .add_metadata    = centralized_add_metadata,
+    .remove_metadata = centralized_remove_metadata
 };
 
 flock_return_t flock_register_centralized_backend(void)

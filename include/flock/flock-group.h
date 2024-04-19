@@ -192,7 +192,8 @@ flock_return_t flock_group_digest(
         uint64_t* digest);
 
 /**
- * @brief Copy the internal view.
+ * @brief Copy the internal view. The resulting view should be freed
+ * by the caller using flock_group_view_clear.
  *
  * @param[in] handle Group handle
  * @param[out] view View

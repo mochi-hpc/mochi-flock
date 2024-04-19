@@ -102,24 +102,6 @@ typedef flock_return_t (*flock_backend_add_metadata_fn)(void*, const char*, cons
 typedef flock_return_t (*flock_backend_remove_metadata_fn)(void*, const char*);
 
 /**
- * @brief Add a member to the group managed by the backend.
- *
- * @param void* Pointer to the backend's state.
- * @param uint64_t Rank of the member to add.
- * @param const char* Address of the member.
- * @param uint16_t Provider ID of the member.
- */
-typedef flock_return_t (*flock_backend_add_member_fn)(void*, uint64_t, const char*, uint16_t);
-
-/**
- * @brief Remove a member from the group managed by the backend.
- *
- * @param void* Pointer to the backend's state.
- * @param uint64_t Rank of the member to remove.
- */
-typedef flock_return_t (*flock_backend_remove_member_fn)(void*, uint64_t);
-
-/**
  * @brief Implementation of an FLOCK backend.
  */
 typedef struct flock_backend_impl {
@@ -130,8 +112,6 @@ typedef struct flock_backend_impl {
     flock_backend_finalize_fn        destroy_group;
     flock_backend_get_config_fn      get_config;
     flock_backend_get_view_fn        get_view;
-    flock_backend_add_member_fn      add_member;
-    flock_backend_remove_member_fn   remove_member;
     flock_backend_add_metadata_fn    add_metadata;
     flock_backend_remove_metadata_fn remove_metadata;
 } flock_backend_impl;
