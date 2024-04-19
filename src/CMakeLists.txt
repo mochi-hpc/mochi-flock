@@ -120,5 +120,4 @@ install (DIRECTORY ../include/flock
          FILES_MATCHING PATTERN "*.h")
 install (FILES "${CMAKE_CURRENT_BINARY_DIR}/flock-server.pc"
                "${CMAKE_CURRENT_BINARY_DIR}/flock-client.pc"
-               "${CMAKE_CURRENT_BINARY_DIR}/flock-admin.pc"
          DESTINATION "lib/pkgconfig/")
