@@ -28,6 +28,12 @@ jobs:
         git clone https://github.com/mochi-hpc/mochi-spack-packages
         spack -e tests repo add mochi-spack-packages
 
+    - name: Setup credentials for buildcache
+      run: |
+        spack -e tests mirror set --autopush --push \
+        --oci-username ${{ github.actor }} \
+        --oci-password "${{ secrets.GITHUB_TOKEN }}" mochi-buildcache
+
     - name: Install spack environment
       run: |
         spack -e tests install
@@ -53,8 +59,5 @@ jobs:
     - name: Push packages to buildcache and update index
       if: ${{ !cancelled() }}
       run: |
-        spack -e tests mirror set --push \
-        --oci-username ${{ github.actor }} \
-        --oci-password "${{ secrets.GITHUB_TOKEN }}" mochi-buildcache
         spack -e tests buildcache push --base-image ubuntu:22.04 \
         --unsigned --update-index mochi-buildcache

@@ -5,7 +5,7 @@ spack:
   - mochi-margo ^mercury~boostsys~checksum ^libfabric fabrics=tcp,rxm
   - json-c
   - mochi-bedrock
-  - mpi
+  - mpich
   concretizer:
     unify: true
     reuse: true
