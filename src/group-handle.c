@@ -89,6 +89,43 @@ flock_return_t flock_group_handle_release(flock_group_handle_t handle)
     return FLOCK_SUCCESS;
 }
 
+static inline flock_return_t group_handle_create_from_view(
+        flock_client_t client,
+        flock_group_view_t* view,
+        uint32_t mode,
+        uint64_t credentials,
+        flock_group_handle_t* handle)
+{
+    flock_group_handle_t rh =
+        (flock_group_handle_t)calloc(1, sizeof(*rh));
+
+    if(!rh) return FLOCK_ERR_ALLOCATION;
+
+    const char* addr = view->members.data[0].address;
+
+    hg_return_t hret = margo_addr_lookup(client->mid, addr, &(rh->addr));
+    if(hret != HG_SUCCESS) return FLOCK_ERR_FROM_MERCURY;
+
+    rh->client      = client;
+    rh->provider_id = view->members.data[0].provider_id;
+    rh->refcount    = 1;
+    rh->credentials = credentials;
+    FLOCK_GROUP_VIEW_MOVE(view, &rh->view);
+
+    client->num_group_handles += 1;
+
+    if(mode & FLOCK_MODE_INIT_UPDATE) {
+        flock_return_t ret = flock_group_update_view(rh, NULL);
+        if(ret != FLOCK_SUCCESS) {
+            flock_group_handle_release(rh);
+            return ret;
+        }
+    }
+
+    *handle = rh;
+    return FLOCK_SUCCESS;
+}
+
 flock_return_t flock_group_handle_create_from_file(
         flock_client_t client,
         const char* filename,
@@ -98,30 +135,15 @@ flock_return_t flock_group_handle_create_from_file(
     if(client == FLOCK_CLIENT_NULL)
         return FLOCK_ERR_INVALID_ARGS;
 
-    // Read the content of the file into a buffer
-    char* buffer = NULL;
-    size_t length;
-    FILE* file = fopen(filename, "r");
-    if(!file) {
-        margo_error(client->mid, "[flock] Could not read file %s", filename);
-        return FLOCK_ERR_INVALID_ARGS;
-    }
-    fseek(file, 0, SEEK_END);
-    length = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    buffer = (char *)malloc(length + 1);
-    if (buffer) {
-        ssize_t r = fread(buffer, 1, length, file);
-        (void)r;
-        buffer[length] = '\0'; // Null-terminate the string
-    } else {
-        return FLOCK_ERR_ALLOCATION;
-    }
-    fclose(file);
+    flock_group_view_t view = FLOCK_GROUP_VIEW_INITIALIZER;
+    uint64_t credentials = 0;
+    flock_return_t ret = group_view_from_file(client->mid, filename, &view, &credentials);
+    if(ret != FLOCK_SUCCESS) return ret;
 
-    flock_return_t ret = flock_group_handle_create_from_serialized(
-        client, buffer, length, mode, handle);
-    free(buffer);
+    ret = group_handle_create_from_view(client, &view, mode, credentials, handle);
+    if(ret != FLOCK_SUCCESS)
+        flock_group_view_clear(&view);
+
     return ret;
 }
 
@@ -144,38 +166,12 @@ flock_return_t flock_group_handle_create_from_serialized(
     flock_group_handle_t rh =
         (flock_group_handle_t)calloc(1, sizeof(*rh));
 
-    if(!rh) {
-        ret = FLOCK_ERR_ALLOCATION;
-        goto finish;
-    }
+    if(!rh) return FLOCK_ERR_ALLOCATION;
 
-    const char* addr = view.members.data[0].address;
-
-    hg_return_t hret = margo_addr_lookup(client->mid, addr, &(rh->addr));
-    if(hret != HG_SUCCESS) {
-        free(rh);
+    ret = group_handle_create_from_view(client, &view, mode, credentials, handle);
+    if(ret != FLOCK_SUCCESS)
         flock_group_view_clear(&view);
-        return FLOCK_ERR_FROM_MERCURY;
-    }
 
-    rh->client      = client;
-    rh->provider_id = view.members.data[0].provider_id;
-    rh->refcount    = 1;
-    rh->view        = view;
-
-    client->num_group_handles += 1;
-
-    if(mode & FLOCK_MODE_INIT_UPDATE) {
-        flock_return_t ret = flock_group_update_view(rh, NULL);
-        if(ret != FLOCK_SUCCESS) {
-            flock_group_handle_release(rh);
-            goto finish;
-        }
-    }
-
-    *handle = rh;
-
-finish:
     return ret;
 }
 

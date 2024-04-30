@@ -25,19 +25,25 @@ static inline void file_serializer(void* uargs, const char* content, size_t size
     sprintf(filename, "%s.swp", data->filename);
     FILE* file = fopen(filename, "w");
     if(!file) {
+        // LCOV_EXCL_START
         data->ret = FLOCK_ERR_ALLOCATION;
         goto finish;
+        // LCOV_EXCL_STOP
     }
     size_t written = fwrite(content, 1, size, file);
     if(written != size) {
+        // LCOV_EXCL_START
         data->ret = FLOCK_ERR_OTHER;
         goto finish;
+        // LCOV_EXCL_STOP
     }
     fclose(file);
     file = NULL;
     if(rename(filename, data->filename) != 0) {
+        // LCOV_EXCL_START
         data->ret = FLOCK_ERR_OTHER;
         goto finish;
+        // LCOV_EXCL_STOP
     }
     data->ret = FLOCK_SUCCESS;
 finish:
@@ -53,7 +59,9 @@ static inline flock_return_t group_view_serialize(
         void* context)
 {
     struct json_object* view = json_object_new_object();
+    // LCOV_EXCL_START
     if(!serializer) return FLOCK_ERR_INVALID_ARGS;
+    // LCOV_EXCL_STOP
 
     struct json_object* members = json_object_new_array_ext(v->members.size);
     json_object_object_add(view, "members", members);
@@ -85,7 +93,9 @@ static inline flock_return_t group_view_serialize(
 
     size_t len;
     const char* str = json_object_to_json_string_length(view, JSON_C_TO_STRING_NOSLASHESCAPE, &len);
+    // LCOV_EXCL_START
     if(!str) return FLOCK_ERR_ALLOCATION;
+    // LCOV_EXCL_STOP
 
     serializer(context, str, len);
 
