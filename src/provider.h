@@ -28,6 +28,7 @@ typedef struct flock_provider {
     margo_instance_id   mid;         // Margo instance
     uint16_t            provider_id; // Provider id
     ABT_pool            pool;        // Pool on which to post RPC requests
+    char*               filename;    // Default group file name
     /* Group implementation */
     flock_group* group;
     /* List of registered membership and metadata callbacks */

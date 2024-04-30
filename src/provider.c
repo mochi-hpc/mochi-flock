@@ -45,7 +45,9 @@ static inline void serialize_view_to_file(void* uargs, const flock_group_view_t*
     struct serialize_view_to_file_args* args = (struct serialize_view_to_file_args*)uargs;
     flock_return_t ret = group_view_serialize_to_file(args->mid, args->credentials, view, args->filename);
     if(ret != FLOCK_SUCCESS) {
+        // LCOV_EXCL_START
         margo_warning(args->mid, "[flock] Could not write group file \"%s\"", args->filename);
+        // LCOV_EXCL_STOP
     }
 }
 
@@ -177,14 +179,17 @@ flock_return_t flock_provider_register(
     /* allocate provider */
     p = (flock_provider_t)calloc(1, sizeof(*p));
     if(p == NULL) {
+        // LCOV_EXCL_START
         margo_error(mid, "[flock] Could not allocate memory for provider");
         json_object_put(config);
         return FLOCK_ERR_ALLOCATION;
+        // LCOV_EXCL_STOP
     }
 
     p->mid         = mid;
     p->provider_id = provider_id;
     p->pool        = a.pool;
+    p->filename    = filename ? strdup(filename) : NULL;
 
     ABT_rwlock_create(&p->update_callbacks_lock);
     p->update_callbacks = NULL;
@@ -205,14 +210,18 @@ flock_return_t flock_provider_register(
     hg_addr_t self_addr = HG_ADDR_NULL;
     hret = margo_addr_self(mid, &self_addr);
     if(hret != HG_SUCCESS) {
+        // LCOV_EXCL_START
         margo_error(mid, "[flock] Could not get self address");
         goto finish;
+        // LCOV_EXCL_STOP
     }
     hret = margo_addr_to_string(mid, self_addr_str, &self_addr_str_size, self_addr);
     margo_addr_free(mid, self_addr);
     if(hret != HG_SUCCESS) {
+        // LCOV_EXCL_START
         margo_error(mid, "[flock] Could convert self address into a string");
         goto finish;
+        // LCOV_EXCL_STOP
     }
     backend_init_args.join = true;
     bool is_first = false;
@@ -229,8 +238,10 @@ flock_return_t flock_provider_register(
     void* context = NULL;
     ret = a.backend->init_group(&backend_init_args, &context);
     if (ret != FLOCK_SUCCESS) {
+        // LCOV_EXCL_START
         margo_error(mid, "[flock] Could not create group, backend returned %d", ret);
         goto finish;
+        // LCOV_EXCL_STOP
     }
 
     /* set the provider's group */
@@ -251,7 +262,7 @@ flock_return_t flock_provider_register(
     };
 
     /* write the current view of the group */
-    if(is_first && filename) {
+    if(is_first && p->filename) {
         p->group->fn->get_view(context, serialize_view_to_file, &ser_args);
     }
 
@@ -292,6 +303,7 @@ static void flock_finalize_provider(void* p)
     if(provider->group)
         provider->group->fn->destroy_group(provider->group->ctx);
     free(provider->group);
+    free(provider->filename);
     margo_instance_id mid = provider->mid;
     free(provider);
     margo_trace(mid, "[flock] Provider successfuly finalized");
@@ -327,6 +339,10 @@ char* flock_provider_get_config(flock_provider_t provider)
         struct json_object* group_type = json_object_new_string(provider->group->fn->name);
         json_object_object_add(group, "type", group_type);
         (provider->group->fn->get_config)(provider->group->ctx, get_backend_config, (void*)root);
+    }
+    if(provider->filename) {
+        json_object_object_add(root, "file",
+            json_object_new_string(provider->filename));
     }
     char* result = strdup(json_object_to_json_string(root));
     json_object_put(root);
