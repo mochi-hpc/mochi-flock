@@ -49,6 +49,14 @@ TEST_CASE("Test group handle for centralized group", "[centralize]") {
             "bootstrap": "view"
            })");
 
+    SECTION("Test provider functionalities") {
+        char* config = flock_provider_get_config(group->providers[0]);
+        REQUIRE(config != nullptr);
+        const char* expected = R"({ "group": { "type": "centralized" }, "config": { "ping_timeout_ms": 400.0, "ping_interval_ms": [ 800.0, 1000.0 ], "ping_max_num_timeouts": 2 } })";
+        REQUIRE(strcmp(config, expected) == 0);
+        free(config);
+    }
+
     SECTION("Create client and group handle") {
         flock_client_t client;
         flock_return_t ret;

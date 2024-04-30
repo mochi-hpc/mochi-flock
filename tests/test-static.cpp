@@ -38,6 +38,14 @@ TEST_CASE("Test group handle for static group", "[static]") {
     // create test group with 5 processes
     auto group = std::make_unique<TestGroup>(context->mid, 5);
 
+    SECTION("Test provider functionalities") {
+        char* config = flock_provider_get_config(group->providers[0]);
+        REQUIRE(config != nullptr);
+        const char* expected = R"({ "group": { "type": "static" }, "config": { } })";
+        REQUIRE(strcmp(config, expected) == 0);
+        free(config);
+    }
+
     SECTION("Create client and group handle") {
         flock_client_t client;
         flock_return_t ret;

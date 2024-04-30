@@ -312,7 +312,7 @@ flock_return_t flock_provider_destroy(
 
 static inline void get_backend_config(void* uargs, const struct json_object* config) {
     struct json_object* root = (struct json_object*)uargs;
-    struct json_object* config_cpy;
+    struct json_object* config_cpy = NULL;
     json_object_deep_copy((struct json_object*)config, &config_cpy,  NULL);
     json_object_object_add(root, "config", config_cpy);
 }
