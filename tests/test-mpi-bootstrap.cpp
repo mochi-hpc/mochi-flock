@@ -69,6 +69,8 @@ TEST_CASE("Test bootstrap with MPI", "[mpi-bootstrap]") {
         margo_addr_to_string(context->mid, self_addr, &self_addr_size, context->addr);
 
         REQUIRE(strcmp(me->address, self_addr) == 0);
+
+        flock_group_view_clear(&view);
     }
 
     MPI_Finalize();

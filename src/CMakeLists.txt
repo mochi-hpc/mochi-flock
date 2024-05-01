@@ -5,7 +5,8 @@ set (server-src-files
 
 set (client-src-files
      client.c
-     group-handle.c)
+     group-handle.c
+     view-serialize.c)
 
 set (backend-src-files
      static/static-backend.c

@@ -6,7 +6,6 @@
 #include "flock/flock-server.h"
 #include "provider.h"
 #include "types.h"
-#include "view-serialize.h"
 
 /* backends that we want to add at compile time */
 #include "static/static-backend.h"
@@ -43,7 +42,7 @@ struct serialize_view_to_file_args {
 static inline void serialize_view_to_file(void* uargs, const flock_group_view_t* view)
 {
     struct serialize_view_to_file_args* args = (struct serialize_view_to_file_args*)uargs;
-    flock_return_t ret = group_view_serialize_to_file(args->mid, args->credentials, view, args->filename);
+    flock_return_t ret = flock_group_view_serialize_to_file(args->mid, args->credentials, view, args->filename);
     if(ret != FLOCK_SUCCESS) {
         // LCOV_EXCL_START
         margo_warning(args->mid, "[flock] Could not write group file \"%s\"", args->filename);

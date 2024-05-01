@@ -5,7 +5,6 @@
  */
 #include "types.h"
 #include "client.h"
-#include "view-serialize.h"
 #include "flock/flock-group-view.h"
 #include "flock/flock-client.h"
 #include <json-c/json.h>
@@ -137,7 +136,7 @@ flock_return_t flock_group_handle_create_from_file(
 
     flock_group_view_t view = FLOCK_GROUP_VIEW_INITIALIZER;
     uint64_t credentials = 0;
-    flock_return_t ret = group_view_from_file(client->mid, filename, &view, &credentials);
+    flock_return_t ret = flock_group_view_from_file(client->mid, filename, &view, &credentials);
     if(ret != FLOCK_SUCCESS) return ret;
 
     ret = group_handle_create_from_view(client, &view, mode, credentials, handle);
@@ -159,7 +158,7 @@ flock_return_t flock_group_handle_create_from_serialized(
 
     flock_group_view_t view = FLOCK_GROUP_VIEW_INITIALIZER;
     uint64_t credentials = 0;
-    flock_return_t ret = group_view_from_string(
+    flock_return_t ret = flock_group_view_from_string(
         client->mid, serialized_view, view_size, &view, &credentials);
     if(ret != FLOCK_SUCCESS) return ret;
 
@@ -181,7 +180,7 @@ flock_return_t flock_group_serialize(
         void* context)
 {
     FLOCK_GROUP_VIEW_LOCK(&handle->view);
-    flock_return_t ret =  group_view_serialize(
+    flock_return_t ret =  flock_group_view_serialize(
             handle->client->mid,
             handle->credentials,
             &handle->view,
@@ -196,7 +195,7 @@ flock_return_t flock_group_serialize_to_file(
         const char* filename)
 {
     FLOCK_GROUP_VIEW_LOCK(&handle->view);
-    flock_return_t ret =  group_view_serialize_to_file(
+    flock_return_t ret =  flock_group_view_serialize_to_file(
             handle->client->mid,
             handle->credentials,
             &handle->view,

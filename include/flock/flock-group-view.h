@@ -292,7 +292,7 @@ static inline uint64_t flock_hash_metadata(const char *key, const char *val)
  *
  * @return a pointer to the added flock_member_t* if successful, NULL in case of allocation error.
  */
-static inline bool flock_group_view_add_member(
+static inline flock_member_t* flock_group_view_add_member(
         flock_group_view_t *view,
         uint64_t rank,
         uint16_t provider_id,
@@ -549,6 +549,76 @@ static inline const char *flock_group_view_find_metadata(const flock_group_view_
     }
     return view->metadata.data[idx].value;
 }
+
+/**
+ * @brief Serialize a flock_group_view_t and pass the serialized string
+ * to a serializer function pointer.
+ *
+ * @param mid Margo instance ID.
+ * @param credentials Credential associated with the group view.
+ * @param v View to serialize.
+ * @param serializer Function pointer to call on the serialized group view.
+ * @param context User-provided arguments for the serializer.
+ *
+ * @return FLOCK_SUCCESS or other error codes.
+ */
+flock_return_t flock_group_view_serialize(
+        margo_instance_id mid,
+        uint64_t credentials,
+        const flock_group_view_t* v,
+        void (*serializer)(void*, const char*, size_t),
+        void* context);
+
+/**
+ * @brief Serialize a flock_group_view_t into a file.
+ *
+ * @param mid Margo instance ID.
+ * @param credentials Credential associated with the group view.
+ * @param v View to serialize.
+ * @param filename Name of the file into which to serialize the view.
+ *
+ * @return FLOCK_SUCCESS or other error codes.
+ */
+flock_return_t flock_group_view_serialize_to_file(
+        margo_instance_id mid,
+        uint64_t credentials,
+        const flock_group_view_t* v,
+        const char* filename);
+
+/**
+ * @brief Initialize a group view from a string.
+ *
+ * @param[in] mid Margo instance ID.
+ * @param[in] str String containing the serialized group view.
+ * @param[in] str_len Length of the string.
+ * @param[out] view View to deserialize.
+ * @param[out] credentials Credential value.
+ *
+ * @return FLOCK_SUCCESS or other error codes.
+ */
+flock_return_t flock_group_view_from_string(
+        margo_instance_id mid,
+        const char* str,
+        size_t str_len,
+        flock_group_view_t* view,
+        uint64_t* credentials);
+
+
+/**
+ * @brief Initialize a group file from a file.
+ *
+ * @param[in] mid Margo instance ID.
+ * @param[in] filename File to read the view from.
+ * @param[out] view View to deserialize.
+ * @param[out] credentials Credential value.
+ *
+ * @return FLOCK_SUCCESS or other error codes.
+ */
+flock_return_t flock_group_view_from_file(
+          margo_instance_id mid,
+          const char* filename,
+          flock_group_view_t* view,
+          uint64_t* credentials);
 
 /**
  * @brief Serialize/deserialize a group view.

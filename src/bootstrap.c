@@ -7,7 +7,6 @@
 #ifdef ENABLE_MPI
 #include "flock/flock-bootstrap-mpi.h"
 #endif
-#include "view-serialize.h"
 
 flock_return_t flock_group_view_init_from_self(
     margo_instance_id mid,
@@ -22,20 +21,26 @@ flock_return_t flock_group_view_init_from_self(
 
     hret = margo_addr_self(mid, &self_addr);
     if(hret != HG_SUCCESS) {
+        // LCOV_EXCL_START
         ret = FLOCK_ERR_FROM_MERCURY;
         goto finish;
+        // LCOV_EXCL_STOP
     }
     hret = margo_addr_to_string(mid, self_addr_str, &self_addr_size, self_addr);
     if(hret != HG_SUCCESS) {
+        // LCOV_EXCL_START
         ret = FLOCK_ERR_FROM_MERCURY;
         goto finish;
+        // LCOV_EXCL_STOP
     }
 
     flock_group_view_clear(view);
 
     if(!flock_group_view_add_member(view, 0, provider_id, self_addr_str)) {
+        // LCOV_EXCL_START
         ret = FLOCK_ERR_ALLOCATION;
         goto finish;
+        // LCOV_EXCL_STOP
     }
 
 finish:
@@ -49,7 +54,7 @@ flock_return_t flock_group_view_init_from_file(
         flock_group_view_t* view)
 {
     uint64_t credentials;
-    return group_view_from_file(mid, filename, view, &credentials);
+    return flock_group_view_from_file(mid, filename, view, &credentials);
 }
 
 #ifdef ENABLE_MPI
@@ -70,55 +75,73 @@ flock_return_t flock_group_view_init_from_mpi(
 
     hret = margo_addr_self(mid, &self_addr);
     if(hret != HG_SUCCESS) {
+        // LCOV_EXCL_START
         ret = FLOCK_ERR_FROM_MERCURY;
         goto finish;
+        // LCOV_EXCL_STOP
     }
     hret = margo_addr_to_string(mid, self_addr_str, &self_addr_size, self_addr);
     if(hret != HG_SUCCESS) {
+        // LCOV_EXCL_START
         ret = FLOCK_ERR_FROM_MERCURY;
         goto finish;
+        // LCOV_EXCL_STOP
     }
 
     mret = MPI_Comm_rank(comm, &rank);
     if(mret != 0) {
+        // LCOV_EXCL_START
         ret = FLOCK_ERR_FROM_MPI;
         goto finish;
+        // LCOV_EXCL_STOP
     }
     mret = MPI_Comm_size(comm, &size);
     if(mret != 0) {
+        // LCOV_EXCL_START
         ret = FLOCK_ERR_FROM_MPI;
         goto finish;
+        // LCOV_EXCL_STOP
     }
 
     provider_ids = (uint16_t*)malloc(size*sizeof(provider_id));
     if(!provider_ids) {
+        // LCOV_EXCL_START
         ret = FLOCK_ERR_ALLOCATION;
         goto finish;
+        // LCOV_EXCL_STOP
     }
     addresses_buf = (char*)malloc(size*256);
     if(!addresses_buf) {
+        // LCOV_EXCL_START
         ret = FLOCK_ERR_ALLOCATION;
         goto finish;
+        // LCOV_EXCL_STOP
     }
 
     mret = MPI_Allgather(&provider_id, 1, MPI_UINT16_T, provider_ids, 1, MPI_UINT16_T, comm);
     if(mret != 0) {
+        // LCOV_EXCL_START
         ret = FLOCK_ERR_FROM_MPI;
         goto finish;
+        // LCOV_EXCL_STOP
     }
 
     mret = MPI_Allgather(self_addr_str, 256, MPI_CHAR, addresses_buf, 256, MPI_CHAR, comm);
     if(mret != 0) {
+        // LCOV_EXCL_START
         ret = FLOCK_ERR_FROM_MPI;
         goto finish;
+        // LCOV_EXCL_STOP
     }
 
     flock_group_view_clear(view);
 
     for(int i = 0; i < size; ++i) {
         if(!flock_group_view_add_member(view, (uint64_t)i, provider_ids[i], addresses_buf + 256*i)) {
+            // LCOV_EXCL_START
             ret = FLOCK_ERR_ALLOCATION;
             goto finish;
+            // LCOV_EXCL_STOP
         }
     }
 

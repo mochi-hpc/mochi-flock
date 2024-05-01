@@ -3,9 +3,6 @@
  *
  * See COPYRIGHT in top-level directory.
  */
-#ifndef _FILE_SERIALIZE_H
-#define _FILE_SERIALIZE_H
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <json-c/json.h>
@@ -51,7 +48,7 @@ finish:
     free(filename);
 }
 
-static inline flock_return_t group_view_serialize(
+flock_return_t flock_group_view_serialize(
         margo_instance_id mid,
         uint64_t credentials,
         const flock_group_view_t* v,
@@ -103,7 +100,7 @@ static inline flock_return_t group_view_serialize(
     return FLOCK_SUCCESS;
 }
 
-static inline flock_return_t group_view_serialize_to_file(
+flock_return_t flock_group_view_serialize_to_file(
         margo_instance_id mid,
         uint64_t credentials,
         const flock_group_view_t* v,
@@ -113,12 +110,12 @@ static inline flock_return_t group_view_serialize_to_file(
         .filename = filename,
         .ret = FLOCK_SUCCESS
     };
-    flock_return_t ret = group_view_serialize(mid, credentials, v, file_serializer, &context);
+    flock_return_t ret = flock_group_view_serialize(mid, credentials, v, file_serializer, &context);
     if(ret != FLOCK_SUCCESS) return ret;
     else return context.ret;
 }
 
-static inline flock_return_t group_view_from_string(
+flock_return_t flock_group_view_from_string(
         margo_instance_id mid,
         const char* str,
         size_t str_len,
@@ -262,7 +259,7 @@ finish:
     return ret;
 }
 
-static inline flock_return_t group_view_from_file(
+flock_return_t flock_group_view_from_file(
         margo_instance_id mid,
         const char* filename,
         flock_group_view_t* view,
@@ -288,9 +285,7 @@ static inline flock_return_t group_view_from_file(
         return FLOCK_ERR_ALLOCATION;
     }
     fclose(file);
-    flock_return_t ret = group_view_from_string(mid, buffer, length, view, credentials);
+    flock_return_t ret = flock_group_view_from_string(mid, buffer, length, view, credentials);
     free(buffer);
     return ret;
 }
-
-#endif
