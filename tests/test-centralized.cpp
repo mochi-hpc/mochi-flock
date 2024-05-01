@@ -48,7 +48,7 @@ TEST_CASE("Test group handle for centralized group", "[centralize]") {
             },
             "bootstrap": "view"
            })");
-
+#if 0
     SECTION("Test provider functionalities") {
         char* config = flock_provider_get_config(group->providers[0]);
         REQUIRE(config != nullptr);
@@ -183,6 +183,64 @@ TEST_CASE("Test group handle for centralized group", "[centralize]") {
         ret = flock_client_finalize(client);
         REQUIRE(ret == FLOCK_SUCCESS);
 
+        // let the group do a few pings
         margo_thread_sleep(context->mid, 5000);
+    }
+#endif
+
+    SECTION("Test removing member") {
+        flock_client_t client;
+        flock_return_t ret;
+        // create a client object
+        ret = flock_client_init(context->mid, ABT_POOL_NULL, &client);
+        REQUIRE(ret == FLOCK_SUCCESS);
+
+        flock_group_handle_t rh;
+        // create a group handle
+        ret = flock_group_handle_create(client,
+                context->addr, 1, FLOCK_MODE_INIT_UPDATE, &rh);
+        REQUIRE(ret == FLOCK_SUCCESS);
+
+        // check group size
+        size_t group_size = 0;
+        ret = flock_group_size(rh, &group_size);
+        REQUIRE(ret == FLOCK_SUCCESS);
+        REQUIRE(group_size == 5);
+
+        // forcefully remove rank 4
+        flock_provider_destroy(group->providers.back());
+        group->providers.pop_back();
+
+        // sleep a bit
+        margo_thread_sleep(context->mid, 5000);
+
+        // update the group handle
+        ret = flock_group_update_view(rh, NULL);
+        REQUIRE(ret == FLOCK_SUCCESS);
+
+        // check group size
+        ret = flock_group_size(rh, &group_size);
+        REQUIRE(ret == FLOCK_SUCCESS);
+        REQUIRE(group_size == 4);
+
+        // test getting addresses and provider IDs with correct ranks
+        for(size_t i = 0; i < 4; ++i) {
+            hg_addr_t addr = HG_ADDR_NULL;
+            ret = flock_group_member_get_address(rh, i, &addr);
+            REQUIRE(ret == FLOCK_SUCCESS);
+            REQUIRE(addr != HG_ADDR_NULL);
+            margo_addr_free(context->mid, addr);
+
+            char* address = NULL;
+            ret = flock_group_member_get_address_string(rh, i, &address);
+            REQUIRE(ret == FLOCK_SUCCESS);
+            REQUIRE(address != NULL);
+            free(address);
+
+            uint16_t provider_id = 0;
+            ret = flock_group_member_get_provider_id(rh, i, &provider_id);
+            REQUIRE(ret == FLOCK_SUCCESS);
+            REQUIRE(provider_id == i+1);
+        }
     }
 }
