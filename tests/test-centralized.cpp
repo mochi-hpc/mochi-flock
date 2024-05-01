@@ -48,7 +48,7 @@ TEST_CASE("Test group handle for centralized group", "[centralize]") {
             },
             "bootstrap": "view"
            })");
-#if 0
+
     SECTION("Test provider functionalities") {
         char* config = flock_provider_get_config(group->providers[0]);
         REQUIRE(config != nullptr);
@@ -186,7 +186,6 @@ TEST_CASE("Test group handle for centralized group", "[centralize]") {
         // let the group do a few pings
         margo_thread_sleep(context->mid, 5000);
     }
-#endif
 
     SECTION("Test removing member") {
         flock_client_t client;
