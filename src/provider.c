@@ -229,9 +229,11 @@ flock_return_t flock_provider_register(
         if(member->provider_id != provider_id) continue;
         if(strcmp(member->address, self_addr_str) != 0) continue;
         backend_init_args.join = false;
+        backend_init_args.rank = member->rank;
         is_first = i == 0;
         break;
     }
+    if(backend_init_args.join) backend_init_args.rank = UINT64_MAX;
 
     /* create the new group's context */
     void* context = NULL;

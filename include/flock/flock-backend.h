@@ -34,6 +34,7 @@ struct json_object;
  */
 typedef struct flock_backend_init_args {
     margo_instance_id          mid;
+    uint64_t                   rank;
     uint16_t                   provider_id;
     ABT_pool                   pool;
     struct json_object*        config;
