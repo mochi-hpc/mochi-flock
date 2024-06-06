@@ -5,6 +5,8 @@ spack:
   - mochi-margo
   - json-c
   - mochi-bedrock
+  - py-pybind11
+  - py-mochi-margo
   - mpi
   concretizer:
     unify: true

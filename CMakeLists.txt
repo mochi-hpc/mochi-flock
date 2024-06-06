@@ -2,6 +2,8 @@
 # See COPYRIGHT in top-level directory.
 cmake_minimum_required (VERSION 3.8)
 project (flock C CXX)
+set (CMAKE_CXX_STANDARD 17)
+set (CMAKE_CXX_STANDARD_REQUIRED ON)
 enable_testing ()
 
 add_definitions (-Wextra -Wall -Wpedantic)
@@ -13,6 +15,7 @@ option (ENABLE_EXAMPLES "Build examples" OFF)
 option (ENABLE_BEDROCK  "Build bedrock module" OFF)
 option (ENABLE_COVERAGE "Build with coverage" OFF)
 option (ENABLE_MPI      "Build with MPI support" OFF)
+option (ENABLE_PYTHON   "Build with Python support" OFF)
 
 # library version set here (e.g. for shared libs).
 set (FLOCK_VERSION_MAJOR 0)
@@ -65,6 +68,14 @@ pkg_check_modules (json-c REQUIRED IMPORTED_TARGET json-c)
 
 if (ENABLE_MPI)
     find_package (MPI REQUIRED)
+endif ()
+
+# search for Python
+if (ENABLE_PYTHON)
+    set (Python3_FIND_STRATEGY LOCATION)
+    find_package (Python3 COMPONENTS Interpreter Development REQUIRED)
+    find_package (pybind11 REQUIRED)
+    add_subdirectory (python)
 endif ()
 
 add_subdirectory (src)
