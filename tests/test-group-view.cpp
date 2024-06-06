@@ -27,7 +27,6 @@ struct TestContext {
 };
 
 struct Member {
-    uint64_t    rank;
     std::string address;
     uint16_t    provider_id;
 };
@@ -54,13 +53,11 @@ TEST_CASE("Test group view interface", "[group-view]") {
         for(size_t i = 0; i < 16; ++i) {
             char address[64];
             sprintf(address, "address/%02lu", i);
-            uint64_t rank = (i*3)%16;
             uint16_t provider_id = i+42;
-            b = flock_group_view_add_member(
-                    &view, rank, provider_id, address);
-            REQUIRE(b);
+            auto mem = flock_group_view_add_member(&view, address, provider_id);
+            REQUIRE(mem);
             REQUIRE(view.digest != previous_digest);
-            members_ref[rank] = {rank, address, provider_id};
+            members_ref[i] = {address, provider_id};
             previous_digest = view.digest;
         }
 
@@ -86,14 +83,12 @@ TEST_CASE("Test group view interface", "[group-view]") {
         REQUIRE(view.metadata.data != nullptr);
 
         for(size_t i = 0; i < view.members.size; ++i) {
-            const flock_member_t* member = flock_group_view_find_member(&view, i);
+            const flock_member_t* member = flock_group_view_member_at(&view, i);
             REQUIRE(members_ref[i].address == member->address);
             REQUIRE(members_ref[i].provider_id == member->provider_id);
-            REQUIRE(members_ref[i].rank == member->rank);
-            REQUIRE(i == member->rank);
         }
 
-        const flock_member_t* member = flock_group_view_find_member(&view, view.members.size);
+        const flock_member_t* member = flock_group_view_member_at(&view, view.members.size);
         REQUIRE(member == nullptr);
 
         for(auto& p : metadata_ref) {
@@ -105,29 +100,28 @@ TEST_CASE("Test group view interface", "[group-view]") {
         const char* value = flock_group_view_find_metadata(&view, "abcd");
         REQUIRE(value == nullptr);
 
-        // Try to remove a rank that does not exist
+        // Try to remove a member using an invalid pointer
         previous_digest = view.digest;
-        b = flock_group_view_remove_member(&view, view.members.size);
+        auto b = flock_group_view_remove_member(&view, (flock_member_t*)0x4);
         REQUIRE(!b);
         REQUIRE(previous_digest == view.digest);
 
         // Remove rank 5
-        b = flock_group_view_remove_member(&view, 5);
+        b = flock_group_view_remove_member(&view, flock_group_view_member_at(&view, 5));
         REQUIRE(b);
         REQUIRE(previous_digest != view.digest);
 
         REQUIRE(view.members.size == 15);
 
         for(size_t i = 0; i < members_ref.size(); ++i) {
-            const flock_member_t* member = flock_group_view_find_member(&view, i);
+            const flock_member_t* member = flock_group_view_find_member(
+                    &view, members_ref[i].address.c_str(), members_ref[i].provider_id);
             if(i == 5) {
                 REQUIRE(member == nullptr);
                 continue;
             }
             REQUIRE(members_ref[i].address == member->address);
             REQUIRE(members_ref[i].provider_id == member->provider_id);
-            REQUIRE(members_ref[i].rank == member->rank);
-            REQUIRE(i == member->rank);
         }
 
         // Try to remove a metadata that does not exist

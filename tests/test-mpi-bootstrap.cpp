@@ -60,14 +60,12 @@ TEST_CASE("Test bootstrap with MPI", "[mpi-bootstrap]") {
         REQUIRE(view.members.size == (unsigned)size);
         REQUIRE(view.members.data != nullptr);
 
-        auto me = flock_group_view_find_member(&view, rank);
-        REQUIRE(me->provider_id == 42 + rank);
-        REQUIRE(me->rank == (unsigned)rank);
-
         char self_addr[256];
         hg_size_t self_addr_size = 256;
         margo_addr_to_string(context->mid, self_addr, &self_addr_size, context->addr);
 
+        auto me = flock_group_view_find_member(&view, self_addr, 42+rank);
+        REQUIRE(me->provider_id == 42 + rank);
         REQUIRE(strcmp(me->address, self_addr) == 0);
 
         flock_group_view_clear(&view);

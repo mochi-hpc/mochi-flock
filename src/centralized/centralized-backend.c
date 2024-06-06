@@ -15,11 +15,10 @@
 #define RAND_BETWEEN(x, y) ((x) + (((double)rand()) / RAND_MAX)*(y-x))
 
 /**
- * @brief The "centralized" backend uses the member with rank 0
- * as a centralized authority that is supposed to hold the most up to date
- * group view. The flock_group_view_t in all the other processes is a
- * read-only, cached version. The primary member will ping the secondary
- * members periodically to check that they are alive.
+ * @brief The "centralized" backend uses one member as a centralized authority
+ * that is supposed to hold the most up to date group view. The flock_group_view_t
+ * in all the other processes is a read-only, cached version. The primary member
+ * will ping the secondary members periodically to check that they are alive.
  */
 typedef struct centralized_context {
     margo_instance_id    mid;
@@ -32,10 +31,10 @@ typedef struct centralized_context {
         uint16_t         provider_id;
     } primary;
     flock_group_view_t   view;
-    // RPCs sent by rank 0 to other ranks
+    // RPCs sent by primary to secondary members
     hg_id_t              ping_rpc_id;
     hg_id_t              membership_update_rpc_id;
-    // RPCs sent by other ranks to rank 0
+    // RPCs sent by secondary to primary member
     hg_id_t              get_view_rpc_id;
     hg_id_t              leave_rpc_id;
     hg_id_t              join_rpc_id;
@@ -92,7 +91,7 @@ static void ping_rpc_ult(hg_handle_t h);
 
 /**
  * Callback periodically called by the timer setup
- * by rank 0 to ping other members.
+ * by the primary member to ping other members.
  */
 static void ping_timer_callback(void* args);
 
@@ -108,7 +107,6 @@ static void get_view_rpc_ult(hg_handle_t h);
  */
 MERCURY_GEN_PROC(membership_update_in_t,
     ((uint8_t)(update))\
-    ((uint64_t)(rank))\
     ((hg_const_string_t)(address))\
     ((uint16_t)(provider_id)))
 
@@ -117,7 +115,7 @@ MERCURY_GEN_PROC(membership_update_out_t,
 
 static flock_return_t broadcast_membership_update(
     centralized_context* ctx, flock_update_t update,
-    size_t rank, const char* address, uint16_t provider_id);
+    const char* address, uint16_t provider_id);
 static DECLARE_MARGO_RPC_HANDLER(membership_update_rpc_ult)
 static void membership_update_rpc_ult(hg_handle_t h);
 
@@ -132,7 +130,12 @@ static void leave_rpc_ult(hg_handle_t h);
  * Member joining types and RPC declaration.
  */
 MERCURY_GEN_PROC(join_in_t,
-    ((uint64_t)(requested_rank))\
+    ((uint16_t)(provider_id)))
+
+/**
+ * Member leaving types and RPC declaration.
+ */
+MERCURY_GEN_PROC(leave_in_t,
     ((uint16_t)(provider_id)))
 
 typedef struct join_out_t {
@@ -150,7 +153,7 @@ static inline hg_return_t hg_proc_join_out_t(hg_proc_t proc, void* args) {
     return hret;
 }
 
-static flock_return_t join(centralized_context* ctx, uint64_t request_rank, uint16_t provider_id);
+static flock_return_t join(centralized_context* ctx, uint16_t provider_id);
 static DECLARE_MARGO_RPC_HANDLER(join_rpc_ult)
 static void join_rpc_ult(hg_handle_t h);
 
@@ -183,10 +186,9 @@ static flock_return_t centralized_create_group(
 {
     flock_return_t ret = FLOCK_SUCCESS;
 
-    // check that the initial view has a rank 0
-    if(args->initial_view.members.size == 0
-    || args->initial_view.members.data[0].rank != 0) {
-        margo_error(args->mid, "[flock] Rank 0 not found for centralized backend");
+    // check that the initial view has at least one member
+    if(args->initial_view.members.size == 0) {
+        margo_error(args->mid, "[flock] Centralized backend requires at least one member");
         return FLOCK_ERR_INVALID_ARGS;
     }
 
@@ -326,7 +328,6 @@ static flock_return_t centralized_create_group(
     ctx->primary.provider_id = primary_member->provider_id;
 
     /* copy the configuration */
-    ctx->rank                  = args->rank;
     ctx->config                = config;
     ctx->ping_timeout_ms       = ping_timeout_ms_val;
     ctx->ping_interval_ms_min  = ping_interval_ms_min;
@@ -362,7 +363,7 @@ static flock_return_t centralized_create_group(
 
     ctx->leave_rpc_id = MARGO_REGISTER_PROVIDER(
         mid, "flock_centralized_leave",
-        uint64_t, void, leave_rpc_ult,
+        leave_in_t, void, leave_rpc_ult,
         args->provider_id, args->pool);
     margo_register_data(mid, ctx->leave_rpc_id, ctx, NULL);
 
@@ -394,7 +395,7 @@ static flock_return_t centralized_create_group(
             margo_timer_start(state->ping_timer, interval);
         }
     } else if(args->join) {
-        ret = join(ctx, args->rank, args->provider_id);
+        ret = join(ctx, args->provider_id);
         if(ret != FLOCK_SUCCESS) {
             // LCOV_EXCL_START
             margo_error(mid, "[flock] Could not join existing group");
@@ -466,22 +467,23 @@ static void ping_timer_callback(void* args)
 
     centralized_context* context = state->context;
     if(state->num_ping_timeouts == context->ping_max_num_timeouts) {
-        size_t rank                  = state->owner->rank;
-        char* address                = strdup(state->owner->address);
-        uint16_t provider_id         = state->owner->provider_id;
+        char* address        = strdup(state->owner->address);
+        uint16_t provider_id = state->owner->provider_id;
         margo_trace(context->mid,
-            "[flock] Ping to member %lu (%s, %d) timed out %d times, "
-            "considering the member dead.", rank, address, provider_id, context->ping_max_num_timeouts);
+            "[flock] Ping to member (%s, %d) timed out %d times, "
+            "considering the member dead.", address, provider_id, context->ping_max_num_timeouts);
         FLOCK_GROUP_VIEW_LOCK(&context->view);
-        flock_group_view_remove_member(&context->view, rank);
+        flock_member_t* member_to_remove = flock_group_view_find_member(&context->view, address, provider_id);
+        if(member_to_remove)
+            flock_group_view_remove_member(&context->view, member_to_remove);
         FLOCK_GROUP_VIEW_UNLOCK(&context->view);
 
         if(context->member_update_callback) {
             (context->member_update_callback)(
-                context->callback_context, FLOCK_MEMBER_DIED, rank, address, provider_id);
+                context->callback_context, FLOCK_MEMBER_DIED, address, provider_id);
         }
 
-        broadcast_membership_update(context, FLOCK_MEMBER_DIED, rank, address, provider_id);
+        broadcast_membership_update(context, FLOCK_MEMBER_DIED, address, provider_id);
         free(address);
         return;
     }
@@ -528,7 +530,7 @@ finish:
 }
 
 // -------------------------------------------------------------------------------
-// GET_VIEW (RPC send by non-zero ranks to primary)
+// GET_VIEW (RPC send by secondary members to primary)
 // -------------------------------------------------------------------------------
 
 static DEFINE_MARGO_RPC_HANDLER(get_view_rpc_ult)
@@ -584,15 +586,13 @@ finish:
 }
 
 // -------------------------------------------------------------------------------
-// LEAVE (RPC send by a non-zero rank to primary when it wants to leave)
+// LEAVE (RPC send a secondary member to the primary member when it wants to leave)
 // -------------------------------------------------------------------------------
 
 static DEFINE_MARGO_RPC_HANDLER(leave_rpc_ult)
 static void leave_rpc_ult(hg_handle_t h)
 {
-    char* address = NULL;
-    uint16_t provider_id;
-    uint64_t rank;
+    leave_in_t in = {0};
 
     /* find the margo instance */
     margo_instance_id mid = margo_hg_handle_get_instance(h);
@@ -603,37 +603,40 @@ static void leave_rpc_ult(hg_handle_t h)
     if(!ctx) goto finish;
 
     /* the leaving provider sent its rank */
-    hg_return_t hret = margo_get_input(h, &rank);
+    hg_return_t hret = margo_get_input(h, &in);
     if(hret != HG_SUCCESS) {
         // LCOV_EXCL_START
-        margo_error(ctx->mid, "[flock] Could not deserialize rank of leaving provider");
+        margo_error(ctx->mid, "[flock] Could not deserialize input from leaving provider");
         goto finish;
         // LCOV_EXCL_STOP
     }
-    margo_free_input(h, &rank);
+    margo_free_input(h, &in);
+
+    /* get the address of the sender */
+    char address[256];
+    hg_size_t address_size = 256;
+    margo_addr_to_string(mid, address, &address_size, info->addr);
 
     FLOCK_GROUP_VIEW_LOCK(&ctx->view);
-    const flock_member_t* member = flock_group_view_find_member(&ctx->view, rank);
+    flock_member_t* member = flock_group_view_find_member(&ctx->view, address, in.provider_id);
     if(!member) {
         FLOCK_GROUP_VIEW_UNLOCK(&ctx->view);
         margo_error(ctx->mid,
-            "[flock] Rank %lu requested to leave but is not part of the group", rank);
+            "[flock] Provider (%s, %u) requested to leave but is not part of the group",
+            address, in.provider_id);
         goto finish;
     }
-    provider_id = member->provider_id;
-    address     = strdup(member->address);
-    flock_group_view_remove_member(&ctx->view, rank);
+    flock_group_view_remove_member(&ctx->view, member);
     FLOCK_GROUP_VIEW_UNLOCK(&ctx->view);
 
     if(ctx->member_update_callback) {
         (ctx->member_update_callback)(
-            ctx->callback_context, FLOCK_MEMBER_LEFT, rank, address, provider_id);
+            ctx->callback_context, FLOCK_MEMBER_LEFT, address, in.provider_id);
     }
 
-    broadcast_membership_update(ctx, FLOCK_MEMBER_LEFT, rank, address, provider_id);
+    broadcast_membership_update(ctx, FLOCK_MEMBER_LEFT, address, in.provider_id);
 
 finish:
-    free(address);
     margo_respond(h, NULL);
     margo_destroy(h);
 }
@@ -660,7 +663,6 @@ static DEFINE_MARGO_RPC_HANDLER(join_rpc_ult)
 static void join_rpc_ult(hg_handle_t h)
 {
     uint16_t provider_id;
-    uint64_t rank;
 
     join_in_t in = {0};
     join_out_t out = {
@@ -693,17 +695,17 @@ static void join_rpc_ult(hg_handle_t h)
     }
 
     provider_id = in.provider_id;
-    rank        = in.requested_rank;
 
     margo_free_input(h, &in);
 
     FLOCK_GROUP_VIEW_LOCK(&ctx->view);
-    if(rank != UINT64_MAX && flock_group_view_find_member(&ctx->view, rank) != NULL) {
+    if(flock_group_view_find_member(&ctx->view, address, in.provider_id) != NULL) {
         FLOCK_GROUP_VIEW_UNLOCK(&ctx->view);
-        margo_error(ctx->mid, "[flock] Requested rank %lu already part of the group", rank);
+        margo_error(ctx->mid, "[flock] Provider (%s, %u) already part of the group",
+                    address, in.provider_id);
         goto finish;
     }
-    flock_member_t* member = flock_group_view_add_member(&ctx->view, rank, provider_id, address);
+    flock_member_t* member = flock_group_view_add_member(&ctx->view, address, provider_id);
 
     member->extra.data  = calloc(1, sizeof(struct member_state));
     member->extra.free  = member_state_free;
@@ -725,10 +727,10 @@ static void join_rpc_ult(hg_handle_t h)
     // notify everyone that the new member joined
     if(ctx->member_update_callback) {
         (ctx->member_update_callback)(
-            ctx->callback_context, FLOCK_MEMBER_JOINED, rank, address, provider_id);
+            ctx->callback_context, FLOCK_MEMBER_JOINED, address, provider_id);
     }
 
-    broadcast_membership_update(ctx, FLOCK_MEMBER_JOINED, rank, address, provider_id);
+    broadcast_membership_update(ctx, FLOCK_MEMBER_JOINED, address, provider_id);
 
     // set out.view
     out.view = &ctx->view;
@@ -738,13 +740,12 @@ finish:
     margo_destroy(h);
 }
 
-static flock_return_t join(centralized_context* ctx, uint64_t rank, uint16_t provider_id)
+static flock_return_t join(centralized_context* ctx, uint16_t provider_id)
 {
     hg_return_t hret   = HG_SUCCESS;
     hg_handle_t handle = HG_HANDLE_NULL;
     join_in_t in = {
-        .provider_id = provider_id,
-        .requested_rank = rank
+        .provider_id = provider_id
     };
     join_out_t out = {
         .ret = 0,
@@ -787,13 +788,13 @@ finish:
 
 // -------------------------------------------------------------------------------
 // MEMBERSHIP UPDATE
-// (RPC send by rank 0 to other ranks to notify them of a membership change)
+// (RPC send by primary to other members to notify them of a membership change)
 // -------------------------------------------------------------------------------
 
 static flock_return_t broadcast_membership_update(
     centralized_context* ctx,
     flock_update_t update,
-    size_t rank, const char* address,
+    const char* address,
     uint16_t provider_id)
 {
     hg_return_t  hret       = HG_SUCCESS;
@@ -804,7 +805,6 @@ static flock_return_t broadcast_membership_update(
     membership_update_out_t* out;
     membership_update_in_t in = {
         .update      = (uint8_t)update,
-        .rank        = rank,
         .address     = address,
         .provider_id = provider_id
     };
@@ -820,12 +820,12 @@ static flock_return_t broadcast_membership_update(
 
     for(size_t i = 0; i < rpc_count; ++i) {
         member_state* state = (member_state*)ctx->view.members.data[i+1].extra.data;
-        if(state->owner->rank == rank) continue; // don't sent to the process concerned with the update
+        if(state->owner->provider_id == provider_id && strcmp(state->owner->address, address) == 0) continue; // don't sent to the process concerned with the update
         hret = margo_create(ctx->mid, state->address, ctx->membership_update_rpc_id, &handles[i]);
         if(hret != HG_SUCCESS) {
             margo_error(ctx->mid,
-                "[flock] Could not create handle to issue membership update to rank %lu",
-                state->owner->rank);
+                "[flock] Could not create handle to issue membership update to member (%s, %u)",
+                state->owner->address, state->owner->provider_id);
         }
     }
 
@@ -836,8 +836,8 @@ static flock_return_t broadcast_membership_update(
             state->owner->provider_id, handles[i], &in, 1000.0, &requests[i]);
         if(hret != HG_SUCCESS) {
             margo_error(ctx->mid,
-                "[flock] Could not forward membership update to rank %lu",
-                state->owner->rank);
+                "[flock] Could not forward membership update to member (%s, %u)",
+                state->owner->address, state->owner->provider_id);
         }
     }
     FLOCK_GROUP_VIEW_UNLOCK(&ctx->view);
@@ -881,12 +881,13 @@ static void membership_update_rpc_ult(hg_handle_t h)
     }
 
     FLOCK_GROUP_VIEW_LOCK(&ctx->view);
-    flock_group_view_remove_member(&ctx->view, in.rank);
+    flock_member_t* member = flock_group_view_find_member(&ctx->view, in.address, in.provider_id);
+    if(member) flock_group_view_remove_member(&ctx->view, member);
     FLOCK_GROUP_VIEW_UNLOCK(&ctx->view);
 
     if(ctx->member_update_callback) {
         (ctx->member_update_callback)(
-            ctx->callback_context, in.update, in.rank, in.address, in.provider_id);
+            ctx->callback_context, in.update, in.address, in.provider_id);
     }
 
     /* respond with the current view */

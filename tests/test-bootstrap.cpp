@@ -55,34 +55,31 @@ TEST_CASE("Test bootstrap with self or file", "[bootstrap]") {
         REQUIRE(view.members.size == 1u);
         REQUIRE(view.members.data != nullptr);
 
-        auto me = flock_group_view_find_member(&view, 0);
-        REQUIRE(me->provider_id == 42);
-        REQUIRE(me->rank == 0u);
-
         char self_addr[256];
         hg_size_t self_addr_size = 256;
         margo_addr_to_string(context->mid, self_addr, &self_addr_size, context->addr);
 
+        auto me = flock_group_view_find_member(&view, self_addr, 42);
+        REQUIRE(me->provider_id == 42);
         REQUIRE(strcmp(me->address, self_addr) == 0);
 
         // write the view to a file
         std::string filename = std::string{"tmp-group."} + std::to_string(time(nullptr));
-        ret = flock_group_view_serialize_to_file(context->mid, 123, &view, filename.c_str());
+        ret = flock_group_view_serialize_to_file(&view, filename.c_str());
         REQUIRE(ret == FLOCK_SUCCESS);
 
         // clear the view
         flock_group_view_clear(&view);
 
         // read it back from the file
-        ret = flock_group_view_init_from_file(context->mid, filename.c_str(), &view);
+        ret = flock_group_view_init_from_file(filename.c_str(), &view);
         REQUIRE(ret == FLOCK_SUCCESS);
 
         REQUIRE(view.members.size == 1u);
         REQUIRE(view.members.data != nullptr);
 
-        me = flock_group_view_find_member(&view, 0);
+        me = flock_group_view_find_member(&view, self_addr, 42);
         REQUIRE(me->provider_id == 42);
-        REQUIRE(me->rank == 0u);
         REQUIRE(strcmp(me->address, self_addr) == 0);
 
         flock_group_view_clear(&view);

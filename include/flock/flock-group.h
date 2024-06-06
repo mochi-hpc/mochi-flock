@@ -28,8 +28,8 @@ typedef struct flock_request* flock_request_t;
  * specified by the given address and provider ID.
  *
  * @param[in] client FLOCK client responsible for the group handle
- * @param[in] addr Mercury address of the provider
- * @param[in] provider_id id of the provider
+ * @param[in] addr Mercury address of one of the members
+ * @param[in] provider_id id of the member
  * @param[in] mode Optional mode
  * @param[out] handle group handle
  *
@@ -55,10 +55,8 @@ flock_return_t flock_group_handle_create(
  * Note: a FLOCK group file is a JSON file with the following format.
  * ```
  * {
- *    "transport": "<protocol>",
- *    "credentials": 42,
  *    "members": [
- *        { "rank": 12, "address": "<some-address>", "provider_id": 1234 },
+ *        { "address": "<some-address>", "provider_id": 1234 },
  *        ...
  *    ],
  *    "metadata": {
@@ -121,77 +119,6 @@ flock_return_t flock_group_handle_ref_incr(
 flock_return_t flock_group_handle_release(flock_group_handle_t handle);
 
 /**
- * @brief Serialize the current group handle and pass the resulting
- * string representation to the serializer function pointer.
- *
- * @param handle Group handle
- * @param serializer Serializer function
- * @param context Context to pass as first argument of the serializer function
- *
- * @return FLOCK_SUCCESS or error code defined in flock-common.h
- */
-flock_return_t flock_group_serialize(
-        flock_group_handle_t handle,
-        void (*serializer)(void*, const char*, size_t),
-        void* context);
-
-/**
- * @brief Serialize the current group handle to a file.
- * If the file exists, it will be overwritten.
- *
- * @param handle Group handle
- * @param filename File name.
- *
- * @return FLOCK_SUCCESS or error code defined in flock-common.h
- */
-flock_return_t flock_group_serialize_to_file(
-        flock_group_handle_t handle,
-        const char* filename);
-
-/**
- * @brief Get the size of the group.
- *
- * @warning The size of the group is NOT the current number of processes,
- * it is N where N-1 is the maximum rank that a process of the group has
- * ever been associated with.
- *
- * This function will not incure any communication. The size returned
- * is the last size known to this client.
- *
- * @param[in] handle Group handle
- * @param[out] size Current known size
- *
- * @return FLOCK_SUCCESS or error code defined in flock-common.h
- */
-flock_return_t flock_group_size(
-        flock_group_handle_t handle,
-        size_t* size);
-
-/**
- * @brief Get the currently known number of live members.
- *
- * @param handle Group handle
- * @param count Number of live members known
- *
- * @return FLOCK_SUCCESS or error code defined in flock-common.h
- */
-flock_return_t flock_group_live_member_count(
-        flock_group_handle_t handle,
-        size_t* count);
-
-/**
- * @brief Get the current digest of the group.
- *
- * @param[in] handle Group handle
- * @param[out] digest Digest
- *
- * @return FLOCK_SUCCESS or error code defined in flock-common.h
- */
-flock_return_t flock_group_digest(
-        flock_group_handle_t handle,
-        uint64_t* digest);
-
-/**
  * @brief Copy the internal view. The resulting view should be freed
  * by the caller using flock_group_view_clear.
  *
@@ -205,148 +132,20 @@ flock_return_t flock_group_get_view(
         flock_group_view_t* view);
 
 /**
- * @brief Function type used to access member information.
- *
- * @param void* User-provided context
- * @param size_t Member rank
- * @param const char* Address of the member
- * @param uint16_t Provider ID of the member
- *
- * @return true to continue iterating, false to break
- */
-typedef bool (*flock_member_access_fn)(void*, size_t, const char*, uint16_t);
-
-/**
- * @brief Iterate over the members of the group. The iteration
- * is garanteed to be from rank 0 to N-1, where N is the size of the group,
- * skipping ranks that are not associated with a live member.
+ * @brief Access the group's internal view without copying it,
+ * by passing a function pointer. The view is locked until the
+ * access function returns.
  *
  * @param handle Group handle
- * @param access_fn Function to call on each member
- * @param context Context to pass to the callback
+ * @param access Access function pointer
+ * @param uargs Argument for the user-provided function pointer
  *
  * @return FLOCK_SUCCESS or error code defined in flock-common.h
  */
-flock_return_t flock_group_member_iterate(
+flock_return_t flock_group_access_view(
         flock_group_handle_t handle,
-        flock_member_access_fn access_fn,
-        void* context);
-
-/**
- * @brief Get the address of a member at a given rank.
- *
- * @important The caller is responsible for calling margo_addr_free
- * on the resuling hg_addr_t.
- *
- * If no member exist at that rank, the address will be set to HG_ADDR_NULL
- * and the function will return FLOCK_ERR_NO_MEMBER.
- *
- * @param[in] handle Group handle
- * @param[in] rank Rank of the process
- * @param[out] address Address of the process
- *
- * @return FLOCK_SUCCESS or error code defined in flock-common.h
- */
-flock_return_t flock_group_member_get_address(
-        flock_group_handle_t handle,
-        size_t rank,
-        hg_addr_t* address);
-
-/**
- * @brief Get the address of a member at a given rank, as a string.
- *
- * @important The caller is responsible for calling free on the address.
- *
- * If no member exist at that rank, the address will be set to NULL
- * and the function will return FLOCK_ERR_NO_MEMBER.
- *
- * @param[in] handle Group handle
- * @param[in] rank Rank of the process
- * @param[out] address Address of the process
- *
- * @return FLOCK_SUCCESS or error code defined in flock-common.h
- */
-flock_return_t flock_group_member_get_address_string(
-        flock_group_handle_t handle,
-        size_t rank,
-        char** address);
-
-/**
- * @brief Get the provider ID of a member at a given rank.
- *
- * If no member exist at that rank, the function will return FLOCK_ERR_NO_MEMBER.
- *
- * @param[in] handle Group handle
- * @param[in] rank Rank of the process
- * @param[out] provider_id Provider ID
- *
- * @return FLOCK_SUCCESS or error code defined in flock-common.h
- */
-flock_return_t flock_group_member_get_provider_id(
-        flock_group_handle_t handle,
-        size_t rank,
-        uint16_t* provider_id);
-
-/**
- * @brief Get the rank of a member from its address and provider ID.
- *
- * @param[in] handle Group handle
- * @param[in] address Address of the member
- * @param[in] provider_id Provider ID of the member
- * @param[out] rank Rank of the member
- *
- * @return FLOCK_SUCCESS or error code defined in flock-common.h
- */
-flock_return_t flock_group_member_get_rank(
-        flock_group_handle_t handle,
-        const char* address,
-        uint16_t provider_id,
-        size_t* rank);
-
-/**
- * @brief Function type used to access the metadata of the group.
- *
- * @param void* User-provided context
- * @param const char* Metadata key
- * @param const char* Metadata value
- *
- * @return true to continue iterating, false to break
- */
-typedef bool (*flock_metadata_access_fn)(void*, const char*, const char*);
-
-/**
- * @brief Iterate over the metadata associated with the group.
- *
- * @param handle Group handle
- * @param access_fn Function to call on each key/value pair
- * @param context Context to pass to the callback
- *
- * @return FLOCK_SUCCESS or error code defined in flock-common.h
- */
-flock_return_t flock_group_metadata_iterate(
-        flock_group_handle_t handle,
-        flock_metadata_access_fn access_fn,
-        void* context);
-
-/**
- * @brief Get the value associated with a given key and pass
- * the key/value pair to the provided access function.
- *
- * If no value is found associated with the specified key,
- * this function will return FLOCK_ERR_NO_METADATA.
- *
- * @param handle Group handle
- * @param key Metadata key
- * @param access_fn Function to call on the metadata
- * @param context Context to pass to the callback
- *
- * @return FLOCK_SUCCESS or error code defined in flock-common.h
- */
-flock_return_t flock_group_metadata_access(
-        flock_group_handle_t handle,
-        const char* key,
-        flock_metadata_access_fn access_fn,
-        void* context);
+        void (*access)(void* uargs, const flock_group_view_t* view),
+        void* uargs);
 
 /**
  * @brief Send a key/value pair to be added in the metadata of the

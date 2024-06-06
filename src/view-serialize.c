@@ -49,8 +49,6 @@ finish:
 }
 
 flock_return_t flock_group_view_serialize(
-        margo_instance_id mid,
-        uint64_t credentials,
         const flock_group_view_t* v,
         void (*serializer)(void*, const char*, size_t),
         void* context)
@@ -68,17 +66,8 @@ flock_return_t flock_group_view_serialize(
                 "address", json_object_new_string(v->members.data[i].address));
         json_object_object_add(member,
                 "provider_id", json_object_new_uint64(v->members.data[i].provider_id));
-        json_object_object_add(member,
-                "rank", json_object_new_uint64(v->members.data[i].rank));
         json_object_array_add(members, member);
     }
-
-    hg_class_t* hg_class = margo_get_class(mid);
-    json_object_object_add(
-            view, "transport", json_object_new_string(HG_Class_get_protocol(hg_class)));
-
-    json_object_object_add(
-            view, "credentials", json_object_new_int64(credentials));
 
     struct json_object* metadata = json_object_new_object();
     for(size_t i=0; i < v->metadata.size; ++i) {
@@ -101,8 +90,6 @@ flock_return_t flock_group_view_serialize(
 }
 
 flock_return_t flock_group_view_serialize_to_file(
-        margo_instance_id mid,
-        uint64_t credentials,
         const flock_group_view_t* v,
         const char* filename)
 {
@@ -110,17 +97,15 @@ flock_return_t flock_group_view_serialize_to_file(
         .filename = filename,
         .ret = FLOCK_SUCCESS
     };
-    flock_return_t ret = flock_group_view_serialize(mid, credentials, v, file_serializer, &context);
+    flock_return_t ret = flock_group_view_serialize(v, file_serializer, &context);
     if(ret != FLOCK_SUCCESS) return ret;
     else return context.ret;
 }
 
 flock_return_t flock_group_view_from_string(
-        margo_instance_id mid,
         const char* str,
         size_t str_len,
-        flock_group_view_t* view,
-        uint64_t* credentials)
+        flock_group_view_t* view)
 {
     // Parse the content of the file
     struct json_tokener*    tokener = json_tokener_new();
@@ -128,14 +113,14 @@ flock_return_t flock_group_view_from_string(
     struct json_object* content = json_tokener_parse_ex(tokener, str, str_len);
     if (!content) {
         jerr = json_tokener_get_error(tokener);
-        margo_error(mid, "[flock] JSON parse error: %s",
+        margo_error(NULL, "[flock] JSON parse error: %s",
                 json_tokener_error_desc(jerr));
         json_tokener_free(tokener);
         return FLOCK_ERR_INVALID_CONFIG;
     }
     json_tokener_free(tokener);
     if (!(json_object_is_type(content, json_type_object))) {
-        margo_error(mid, "[flock] Invalid JSON group description");
+        margo_error(NULL, "[flock] Invalid JSON group description");
         json_object_put(content);
         return FLOCK_ERR_INVALID_CONFIG;
     }
@@ -143,49 +128,29 @@ flock_return_t flock_group_view_from_string(
     flock_return_t ret = FLOCK_SUCCESS;
 
     // Check that the content has the right format
-    struct json_object* cred      = json_object_object_get(content, "credentials");
-    struct json_object* transport = json_object_object_get(content, "transport");
     struct json_object* members   = json_object_object_get(content, "members");
     struct json_object* metadata  = json_object_object_get(content, "metadata");
 
-    if(credentials && !json_object_is_type(cred, json_type_int)) {
-        margo_error(mid, "[flock] \"credentials\" field should be an integer");
-        ret = FLOCK_ERR_INVALID_CONFIG;
-        goto finish;
-    }
-
-    if(!transport) {
-        margo_error(mid, "[flock] \"transport\" field not found");
-        ret = FLOCK_ERR_INVALID_CONFIG;
-        goto finish;
-    }
-
-    if(!json_object_is_type(transport, json_type_string)) {
-        margo_error(mid, "[flock] \"transport\" field should be of type string");
-        ret = FLOCK_ERR_INVALID_CONFIG;
-        goto finish;
-    }
-
     if(metadata && !json_object_is_type(metadata, json_type_object)) {
-        margo_error(mid, "[flock] \"metadata\" field should be of type object");
+        margo_error(NULL, "[flock] \"metadata\" field should be of type object");
         ret = FLOCK_ERR_INVALID_CONFIG;
         goto finish;
     }
 
     if(!members) {
-        margo_error(mid, "[flock] \"members\" field not found");
+        margo_error(NULL, "[flock] \"members\" field not found");
         ret = FLOCK_ERR_INVALID_CONFIG;
         goto finish;
     }
 
     if(!json_object_is_type(members, json_type_array)) {
-        margo_error(mid, "[flock] \"members\" field should be of type array");
+        margo_error(NULL, "[flock] \"members\" field should be of type array");
         ret = FLOCK_ERR_INVALID_CONFIG;
         goto finish;
     }
 
     if(json_object_array_length(members) == 0) {
-        margo_error(mid, "[flock] \"members\" field should have at least one element");
+        margo_error(NULL, "[flock] \"members\" field should have at least one element");
         ret = FLOCK_ERR_INVALID_CONFIG;
         goto finish;
     }
@@ -193,45 +158,39 @@ flock_return_t flock_group_view_from_string(
     for(size_t i = 0; i < json_object_array_length(members); ++i) {
         struct json_object* member = json_object_array_get_idx(members, i);
         if(!json_object_is_type(member, json_type_object)) {
-            margo_error(mid, "[flock] \"members[%llu]\" should be an object", i);
+            margo_error(NULL, "[flock] \"members[%llu]\" should be an object", i);
             ret = FLOCK_ERR_INVALID_CONFIG;
             goto finish;
         }
         struct json_object* address     = json_object_object_get(member, "address");
-        struct json_object* rank        = json_object_object_get(member, "rank");
         struct json_object* provider_id = json_object_object_get(member, "provider_id");
         if(!address) {
-            margo_error(mid, "[flock] \"members[%llu].address\" not found", i);
+            margo_error(NULL, "[flock] \"members[%llu].address\" not found", i);
             ret = FLOCK_ERR_INVALID_CONFIG;
             goto finish;
         }
         if(!provider_id) {
-            margo_error(mid, "[flock] \"members[%llu].provider_id\" not found", i);
-            ret = FLOCK_ERR_INVALID_CONFIG;
-            goto finish;
-        }
-        if(!rank) {
-            margo_error(mid, "[flock] \"members[%llu].rank\" not found", i);
+            margo_error(NULL, "[flock] \"members[%llu].provider_id\" not found", i);
             ret = FLOCK_ERR_INVALID_CONFIG;
             goto finish;
         }
         if(!json_object_is_type(address, json_type_string)) {
-            margo_error(mid, "[flock] \"members[%llu].address\" should be a string", i);
+            margo_error(NULL, "[flock] \"members[%llu].address\" should be a string", i);
             ret = FLOCK_ERR_INVALID_CONFIG;
             goto finish;
         }
         if(!json_object_is_type(provider_id, json_type_int)) {
-            margo_error(mid, "[flock] \"members[%llu].provider_id\" should be an integer", i);
+            margo_error(NULL, "[flock] \"members[%llu].provider_id\" should be an integer", i);
             ret = FLOCK_ERR_INVALID_CONFIG;
             goto finish;
         }
         if(json_object_get_int64(provider_id) < 0 || json_object_get_int64(provider_id) > 65535) {
-            margo_error(mid, "[flock] \"members[%llu].provider_id\" value out of allowed range", i);
+            margo_error(NULL, "[flock] \"members[%llu].provider_id\" value out of allowed range", i);
             ret = FLOCK_ERR_INVALID_CONFIG;
             goto finish;
         }
         if(json_object_get_int64(provider_id) < 0) {
-            margo_error(mid, "[flock] \"members[%llu].rank\" value cannot be negative", i);
+            margo_error(NULL, "[flock] \"members[%llu].rank\" value cannot be negative", i);
             ret = FLOCK_ERR_INVALID_CONFIG;
             goto finish;
         }
@@ -243,11 +202,9 @@ flock_return_t flock_group_view_from_string(
         struct json_object* member      = json_object_array_get_idx(members, i);
         struct json_object* address     = json_object_object_get(member, "address");
         struct json_object* provider_id = json_object_object_get(member, "provider_id");
-        struct json_object* rank        = json_object_object_get(member, "rank");
         flock_group_view_add_member(view,
-                json_object_get_uint64(rank),
-                (uint16_t)json_object_get_uint64(provider_id),
-                json_object_get_string(address));
+                json_object_get_string(address),
+                (uint16_t)json_object_get_uint64(provider_id));
     }
     json_object_object_foreach(metadata, metadata_key, metadata_value) {
         flock_group_view_add_metadata(view, metadata_key,
@@ -260,17 +217,15 @@ finish:
 }
 
 flock_return_t flock_group_view_from_file(
-        margo_instance_id mid,
         const char* filename,
-        flock_group_view_t* view,
-        uint64_t* credentials)
+        flock_group_view_t* view)
 {
     // Read the content of the file into a buffer
     char* buffer = NULL;
     size_t length;
     FILE* file = fopen(filename, "r");
     if(!file) {
-        margo_error(mid, "[flock] Could not read file %s", filename);
+        margo_error(NULL, "[flock] Could not read file %s", filename);
         return FLOCK_ERR_INVALID_ARGS;
     }
     fseek(file, 0, SEEK_END);
@@ -285,7 +240,7 @@ flock_return_t flock_group_view_from_file(
         return FLOCK_ERR_ALLOCATION;
     }
     fclose(file);
-    flock_return_t ret = flock_group_view_from_string(mid, buffer, length, view, credentials);
+    flock_return_t ret = flock_group_view_from_string(buffer, length, view);
     free(buffer);
     return ret;
 }

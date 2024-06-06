@@ -36,10 +36,9 @@ typedef enum flock_update_t {
     X(FLOCK_ERR_FROM_MPI, "MPI error")                   \
     X(FLOCK_ERR_OP_UNSUPPORTED, "Unsupported operation") \
     X(FLOCK_ERR_OP_FORBIDDEN, "Forbidden operation")     \
-    X(FLOCK_ERR_NO_MEMBER, "No member at this rank")     \
+    X(FLOCK_ERR_NO_MEMBER, "No member at this index")    \
     X(FLOCK_ERR_NO_METADATA, "Invalid metadata key")     \
     X(FLOCK_ERR_NOT_A_MEMBER, "Process is not member")   \
-    X(FLOCK_ERR_RANK_USED, "Rank alread used")           \
     X(FLOCK_ERR_OTHER, "Other error")
 
 
@@ -57,11 +56,10 @@ typedef enum flock_return_t {
  *
  * @param void* User-provided context
  * @param flock_update_t Update type
- * @param size_t Rank of the member
  * @param const char* Address of the member
  * @param uint16_t Provider ID of the member
  */
-typedef void (*flock_membership_update_fn)(void*, flock_update_t, size_t, const char*, uint16_t);
+typedef void (*flock_membership_update_fn)(void*, flock_update_t, const char*, uint16_t);
 
 /**
  * @brief Type of function called when a key/value pair in the metadata of

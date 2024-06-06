@@ -25,7 +25,7 @@ static inline flock_return_t add_backend_impl(flock_backend_impl* backend);
 
 /* Functions to dispatch updates to user-supplied callback functions */
 static void dispatch_member_update(
-    void* p, flock_update_t u, size_t rank, const char* address, uint16_t provider_id);
+    void* p, flock_update_t u, const char* address, uint16_t provider_id);
 static void dispatch_metadata_update(
     void* p, const char* key, const char* value);
 
@@ -36,13 +36,12 @@ static void flock_get_view_ult(hg_handle_t h);
 struct serialize_view_to_file_args {
     margo_instance_id mid;
     const char* filename;
-    uint64_t credentials;
 };
 
 static inline void serialize_view_to_file(void* uargs, const flock_group_view_t* view)
 {
     struct serialize_view_to_file_args* args = (struct serialize_view_to_file_args*)uargs;
-    flock_return_t ret = flock_group_view_serialize_to_file(args->mid, args->credentials, view, args->filename);
+    flock_return_t ret = flock_group_view_serialize_to_file(view, args->filename);
     if(ret != FLOCK_SUCCESS) {
         // LCOV_EXCL_START
         margo_warning(args->mid, "[flock] Could not write group file \"%s\"", args->filename);
@@ -229,11 +228,9 @@ flock_return_t flock_provider_register(
         if(member->provider_id != provider_id) continue;
         if(strcmp(member->address, self_addr_str) != 0) continue;
         backend_init_args.join = false;
-        backend_init_args.rank = member->rank;
         is_first = i == 0;
         break;
     }
-    if(backend_init_args.join) backend_init_args.rank = UINT64_MAX;
 
     /* create the new group's context */
     void* context = NULL;
@@ -258,8 +255,7 @@ flock_return_t flock_provider_register(
 
     struct serialize_view_to_file_args ser_args = {
         .mid         = mid,
-        .filename    = filename,
-        .credentials = a.credentials
+        .filename    = filename
     };
 
     /* write the current view of the group */
@@ -489,13 +485,13 @@ flock_return_t flock_provider_remove_update_callbacks(
 }
 
 static void dispatch_member_update(
-    void* p, flock_update_t u, size_t rank, const char* address, uint16_t provider_id)
+    void* p, flock_update_t u, const char* address, uint16_t provider_id)
 {
     flock_provider_t provider = (flock_provider_t)p;
     ABT_rwlock_rdlock(provider->update_callbacks_lock);
     update_callback_t c = provider->update_callbacks;
     while(c) {
-        (c->member_cb)(c->args, u, rank, address, provider_id);
+        (c->member_cb)(c->args, u, address, provider_id);
         c = c->next;
     }
     ABT_rwlock_unlock(provider->update_callbacks_lock);

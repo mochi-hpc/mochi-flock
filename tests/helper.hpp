@@ -46,7 +46,7 @@ struct TestGroup {
             // create the initial group view to bootstrap with
             flock_group_view_t initial_view = FLOCK_GROUP_VIEW_INITIALIZER;
             for(size_t j = 0; j < group_size; ++j)
-                flock_group_view_add_member(&initial_view, j, (uint16_t)(j+1), address);
+                flock_group_view_add_member(&initial_view, address, (uint16_t)(j+1));
 
             // add some metadata
             flock_group_view_add_metadata(&initial_view, "matthieu", "dorier");

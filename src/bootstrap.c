@@ -36,7 +36,7 @@ flock_return_t flock_group_view_init_from_self(
 
     flock_group_view_clear(view);
 
-    if(!flock_group_view_add_member(view, 0, provider_id, self_addr_str)) {
+    if(!flock_group_view_add_member(view, self_addr_str, provider_id)) {
         // LCOV_EXCL_START
         ret = FLOCK_ERR_ALLOCATION;
         goto finish;
@@ -49,12 +49,10 @@ finish:
 }
 
 flock_return_t flock_group_view_init_from_file(
-        margo_instance_id mid,
         const char* filename,
         flock_group_view_t* view)
 {
-    uint64_t credentials;
-    return flock_group_view_from_file(mid, filename, view, &credentials);
+    return flock_group_view_from_file(filename, view);
 }
 
 #ifdef ENABLE_MPI
@@ -137,7 +135,7 @@ flock_return_t flock_group_view_init_from_mpi(
     flock_group_view_clear(view);
 
     for(int i = 0; i < size; ++i) {
-        if(!flock_group_view_add_member(view, (uint64_t)i, provider_ids[i], addresses_buf + 256*i)) {
+        if(!flock_group_view_add_member(view, addresses_buf + 256*i, provider_ids[i])) {
             // LCOV_EXCL_START
             ret = FLOCK_ERR_ALLOCATION;
             goto finish;

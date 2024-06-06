@@ -58,7 +58,7 @@ flock_return_t flock_group_handle_create(
             flock_group_handle_release(rh);
             return FLOCK_ERR_FROM_MERCURY;
         }
-        flock_group_view_add_member(&rh->view, 0, provider_id, address);
+        flock_group_view_add_member(&rh->view, address, provider_id);
     }
 
     *handle = rh;
@@ -136,7 +136,7 @@ flock_return_t flock_group_handle_create_from_file(
 
     flock_group_view_t view = FLOCK_GROUP_VIEW_INITIALIZER;
     uint64_t credentials = 0;
-    flock_return_t ret = flock_group_view_from_file(client->mid, filename, &view, &credentials);
+    flock_return_t ret = flock_group_view_from_file(filename, &view);
     if(ret != FLOCK_SUCCESS) return ret;
 
     ret = group_handle_create_from_view(client, &view, mode, credentials, handle);
@@ -159,7 +159,7 @@ flock_return_t flock_group_handle_create_from_serialized(
     flock_group_view_t view = FLOCK_GROUP_VIEW_INITIALIZER;
     uint64_t credentials = 0;
     flock_return_t ret = flock_group_view_from_string(
-        client->mid, serialized_view, view_size, &view, &credentials);
+        serialized_view, view_size, &view);
     if(ret != FLOCK_SUCCESS) return ret;
 
     flock_group_handle_t rh =
@@ -172,75 +172,6 @@ flock_return_t flock_group_handle_create_from_serialized(
         flock_group_view_clear(&view);
 
     return ret;
-}
-
-flock_return_t flock_group_serialize(
-        flock_group_handle_t handle,
-        void (*serializer)(void*, const char*, size_t),
-        void* context)
-{
-    FLOCK_GROUP_VIEW_LOCK(&handle->view);
-    flock_return_t ret =  flock_group_view_serialize(
-            handle->client->mid,
-            handle->credentials,
-            &handle->view,
-            serializer,
-            context);
-    FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
-    return ret;
-}
-
-flock_return_t flock_group_serialize_to_file(
-        flock_group_handle_t handle,
-        const char* filename)
-{
-    FLOCK_GROUP_VIEW_LOCK(&handle->view);
-    flock_return_t ret =  flock_group_view_serialize_to_file(
-            handle->client->mid,
-            handle->credentials,
-            &handle->view,
-            filename);
-    FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
-    return ret;
-}
-
-flock_return_t flock_group_size(
-        flock_group_handle_t handle,
-        size_t* size)
-{
-    // IMPORTANT: in the view.members structure, the "size" field
-    // is the number of entries in the array, not the size of the
-    // group. The size of the group is defined as R+1 where R is
-    // the maximum rank found in the group.
-    FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
-    if(handle->view.members.size == 0) {
-        *size = 0;
-    } else {
-        flock_member_t* last_member = &handle->view.members.data[handle->view.members.size-1];
-        *size = last_member->rank + 1;
-    }
-    FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
-    return FLOCK_SUCCESS;
-}
-
-flock_return_t flock_group_live_member_count(
-        flock_group_handle_t handle,
-        size_t* count)
-{
-    FLOCK_GROUP_VIEW_LOCK(&handle->view);
-    *count = handle->view.members.size;
-    FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
-    return FLOCK_SUCCESS;
-}
-
-flock_return_t flock_group_digest(
-        flock_group_handle_t handle,
-        uint64_t* digest)
-{
-    FLOCK_GROUP_VIEW_LOCK(&handle->view);
-    *digest = handle->view.digest;
-    FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
-    return FLOCK_SUCCESS;
 }
 
 flock_return_t flock_group_get_view(
@@ -256,7 +187,6 @@ flock_return_t flock_group_get_view(
     for(size_t i = 0; i < view->members.size; ++i) {
         view->members.data[i].address     = strdup(handle->view.members.data[i].address);
         view->members.data[i].provider_id = handle->view.members.data[i].provider_id;
-        view->members.data[i].rank        = handle->view.members.data[i].rank;
     }
     view->metadata.size     = handle->view.metadata.size;
     view->metadata.capacity = handle->view.metadata.capacity;
@@ -269,131 +199,17 @@ flock_return_t flock_group_get_view(
     return FLOCK_SUCCESS;
 }
 
-flock_return_t flock_group_member_iterate(
-          flock_group_handle_t handle,
-          flock_member_access_fn access_fn,
-          void* context)
+flock_return_t flock_group_access_view(
+        flock_group_handle_t handle,
+        void (*access)(void* uargs, const flock_group_view_t* view),
+        void* uargs)
 {
-    if(!access_fn) return FLOCK_SUCCESS;
     FLOCK_GROUP_VIEW_LOCK(&handle->view);
-    // Call the callback on all members
-    for(size_t i=0; i < handle->view.members.size; ++i) {
-        if(!access_fn(context,
-                handle->view.members.data[i].rank,
-                handle->view.members.data[i].address,
-                handle->view.members.data[i].provider_id))
-            break;
+    if (access) {
+        access(uargs, &handle->view);
     }
     FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
     return FLOCK_SUCCESS;
-}
-
-flock_return_t flock_group_member_get_address_string(
-          flock_group_handle_t handle,
-          size_t rank,
-          char** address)
-{
-    FLOCK_GROUP_VIEW_LOCK(&handle->view);
-    const flock_member_t* member = flock_group_view_find_member(&handle->view, rank);
-    if(!member) {
-        FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
-        *address = NULL;
-        return FLOCK_ERR_NO_MEMBER;
-    }
-    *address = strdup(member->address);
-    FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
-    return FLOCK_SUCCESS;
-}
-
-flock_return_t flock_group_member_get_address(
-          flock_group_handle_t handle,
-          size_t rank,
-          hg_addr_t* address)
-{
-    FLOCK_GROUP_VIEW_LOCK(&handle->view);
-    const flock_member_t* member = flock_group_view_find_member(&handle->view, rank);
-    if(!member) {
-        FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
-        *address = HG_ADDR_NULL;
-        return FLOCK_ERR_NO_MEMBER;
-    }
-    hg_return_t hret = margo_addr_lookup(
-        handle->client->mid,
-        member->address, address);
-    FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
-    if(hret != HG_SUCCESS) return FLOCK_ERR_FROM_MERCURY;
-    return FLOCK_SUCCESS;
-}
-
-flock_return_t flock_group_member_get_provider_id(
-          flock_group_handle_t handle,
-          size_t rank,
-          uint16_t* provider_id)
-{
-
-    FLOCK_GROUP_VIEW_LOCK(&handle->view);
-    const flock_member_t* member = flock_group_view_find_member(&handle->view, rank);
-    if(!member) {
-        FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
-        *provider_id = MARGO_MAX_PROVIDER_ID;
-        return FLOCK_ERR_NO_MEMBER;
-    }
-    *provider_id = member->provider_id;
-    FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
-    return FLOCK_SUCCESS;
-}
-
-flock_return_t flock_group_member_get_rank(
-          flock_group_handle_t handle,
-          const char* address,
-          uint16_t provider_id,
-          size_t* rank)
-{
-    *rank = SIZE_MAX;
-    flock_return_t ret = FLOCK_ERR_NO_MEMBER;
-    FLOCK_GROUP_VIEW_LOCK(&handle->view);
-    for(size_t i=0; i < handle->view.members.size; ++i) {
-        if(provider_id != handle->view.members.data[i].provider_id) continue;
-        if(strcmp(address, handle->view.members.data[i].address) != 0) continue;
-        *rank = handle->view.members.data[i].rank;
-        ret = FLOCK_SUCCESS;
-        break;
-    }
-    FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
-    return ret;
-}
-
-flock_return_t flock_group_metadata_iterate(
-          flock_group_handle_t handle,
-          flock_metadata_access_fn access_fn,
-          void* context)
-{
-    if(!access_fn) return FLOCK_SUCCESS;
-    FLOCK_GROUP_VIEW_LOCK(&handle->view);
-    for(size_t i = 0; i < handle->view.metadata.size; ++i) {
-        if(!access_fn(context,
-                      handle->view.metadata.data[i].key,
-                      handle->view.metadata.data[i].value))
-            break;
-    }
-    FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
-    return FLOCK_SUCCESS;
-}
-
-flock_return_t flock_group_metadata_access(
-          flock_group_handle_t handle,
-          const char* key,
-          flock_metadata_access_fn access_fn,
-          void* context)
-{
-    flock_return_t ret = FLOCK_SUCCESS;
-    if(!access_fn) return FLOCK_SUCCESS;
-    FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
-    const char* value = flock_group_view_find_metadata(&handle->view, key);
-    if(value) access_fn(context, key, value);
-    else ret = FLOCK_ERR_NO_METADATA;
-    FLOCK_GROUP_VIEW_UNLOCK(&handle->view);
-    return ret;
 }
 
 flock_return_t flock_group_metadata_set(
@@ -402,4 +218,8 @@ flock_return_t flock_group_metadata_set(
           const char* value)
 {
     // TODO
+    (void)handle;
+    (void)key;
+    (void)value;
+    return FLOCK_ERR_OP_UNSUPPORTED;
 }

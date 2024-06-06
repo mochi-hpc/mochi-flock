@@ -32,14 +32,12 @@ flock_return_t flock_group_view_init_from_self(
 /**
  * @brief Initialize a group view by reading it from a file.
  *
- * @param[in] mid Margo instance ID
  * @param[in] filename File containing the view
  * @param[out] view View
  *
  * @return FLOCK_SUCCESS or other error code.
  */
 flock_return_t flock_group_view_init_from_file(
-        margo_instance_id mid,
         const char* filename,
         flock_group_view_t* view);
 

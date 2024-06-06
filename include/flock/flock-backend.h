@@ -23,7 +23,7 @@ struct json_object;
  * config to increase its reference count and keep it internally
  * (the provider does not modify it).
  *
- * @note The backend's init_group can copy the initial_view internally.
+ * @note The backend's init_group can move the initial_view internally.
  * If it does it, it should memset the flock_backend_init_args's initial_view
  * field to 0 so that the provider does not free it.
  *
@@ -34,7 +34,6 @@ struct json_object;
  */
 typedef struct flock_backend_init_args {
     margo_instance_id          mid;
-    uint64_t                   rank;
     uint16_t                   provider_id;
     ABT_pool                   pool;
     struct json_object*        config;

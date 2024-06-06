@@ -41,11 +41,6 @@ static int flock_register_provider(
         goto finish;
     }
 
-    struct json_object* credentials = json_object_object_get(config, "credentials");
-    if(credentials && json_object_is_type(credentials, json_type_int)) {
-        flock_args.credentials = json_object_get_uint64(credentials);
-    }
-
     struct json_object* bootstrap = json_object_object_get(config, "bootstrap");
     if(!bootstrap) {
         margo_error(mid, "[flock] \"bootstrap\" field not found in provider configuration");

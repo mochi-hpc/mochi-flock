@@ -31,9 +31,8 @@ extern "C" {
  * @brief Representation of a group member.
  */
 typedef struct {
-    uint64_t  rank;
-    uint16_t  provider_id;
-    char*     address;
+    char*    address;
+    uint16_t provider_id;
     // The fields bellow can be used by backends to associate extra data
     // to each member in a group view. These fields are not serialized when
     // the view is transferred. The free function, if provided will be called
@@ -54,8 +53,6 @@ static inline hg_return_t hg_proc_flock_member_t(hg_proc_t proc, flock_member_t*
         member->extra.data = NULL;
         member->extra.free = NULL;
     }
-    hret = hg_proc_hg_uint64_t(proc, &member->rank);
-    if(hret != HG_SUCCESS) return hret;
     hret = hg_proc_hg_uint16_t(proc, &member->provider_id);
     if(hret != HG_SUCCESS) return hret;
     hret = hg_proc_hg_string_t(proc, &member->address);
@@ -145,6 +142,18 @@ typedef struct {
 } while(0)
 
 /**
+ * @brief Return the view's digest.
+ *
+ * @param view View.
+ *
+ * @return The view's digest.
+ */
+static inline uint64_t flock_group_view_digest(const flock_group_view_t* view)
+{
+    return view->digest;
+}
+
+/**
  * @brief Clear the content of a flock_flock_group_view_t.
  *
  * @param view Group view to clear.
@@ -191,6 +200,27 @@ static inline void flock_group_view_clear_extra(flock_group_view_t *view)
 }
 
 /**
+ * @brief Lexicographic comparison between two members.
+ * First compares the provider IDs, then addresses.
+ *
+ * @param mem1 Member 1
+ * @param mem2 Member 1
+ *
+ * @return 0 if the members are equal (same address and provider ID),
+ *         -1 if mem1 < mem2, 1 if mem1 > mem2.
+ */
+static inline int flock_member_cmp(flock_member_t* mem1, flock_member_t* mem2)
+{
+    int x = strcmp(mem1->address, mem2->address);
+    if (x != 0) return x;
+    if (mem1->provider_id < mem2->provider_id)
+        return -1;
+    else if(mem1->provider_id > mem2->provider_id)
+        return 1;
+    return 0;
+}
+
+/**
  * @brief Binary search through the sorted array of members.
  *
  * @param view View to search in.
@@ -199,15 +229,17 @@ static inline void flock_group_view_clear_extra(flock_group_view_t *view)
  * @return The index of the member found, or -1 if not found.
  */
 static inline ssize_t flock_group_view_members_binary_search(
-    const flock_group_view_t *view, uint64_t rank)
+    const flock_group_view_t *view, const char* address, uint16_t provider_id)
 {
+    flock_member_t target = {(char*)address, provider_id, {NULL, NULL}};
     ssize_t left = 0;
     ssize_t right = view->members.size - 1;
     while (left <= right) {
         ssize_t mid = left + (right - left) / 2;
-        if (view->members.data[mid].rank == rank) {
+        int c = flock_member_cmp(&view->members.data[mid], &target);
+        if (c == 0) {
             return mid; // Rank found
-        } else if (view->members.data[mid].rank < rank) {
+        } else if (c < 0) {
             left = mid + 1;
         } else {
             right = mid - 1;
@@ -248,13 +280,10 @@ static inline uint64_t flock_djb2_hash(const char *str)
  * @return a uint64_t hash.
  */
 static inline uint64_t flock_hash_member(
-    uint64_t rank,
     uint16_t provider_id,
     const char *address)
 {
     uint64_t hash = flock_djb2_hash(address);
-    for(unsigned i=0; i < sizeof(rank); ++i)
-        hash = ((hash << 5) + hash) + ((char*)&rank)[i];
     for(unsigned i=0; i < sizeof(provider_id); ++i)
         hash = ((hash << 5) + hash) + ((char*)&provider_id)[i];
     return hash;
@@ -286,7 +315,6 @@ static inline uint64_t flock_hash_metadata(const char *key, const char *val)
  * not adding a member with a rank that is already in use.
  *
  * @param view View in which to add the member.
- * @param rank Rank of the new member.
  * @param provider_id Provider ID of the new member.
  * @param address Address of the new member.
  *
@@ -294,12 +322,11 @@ static inline uint64_t flock_hash_metadata(const char *key, const char *val)
  */
 static inline flock_member_t* flock_group_view_add_member(
         flock_group_view_t *view,
-        uint64_t rank,
-        uint16_t provider_id,
-        const char *address)
+        const char *address,
+        uint16_t provider_id)
 {
     // Compute the new member's hash
-    uint64_t member_hash = flock_hash_member(rank, provider_id, address);
+    uint64_t member_hash = flock_hash_member(provider_id, address);
 
     // Check if there is enough capacity, if not, resize
     if (view->members.size == view->members.capacity) {
@@ -314,10 +341,12 @@ static inline flock_member_t* flock_group_view_add_member(
     }
 
     // Find the position to insert while maintaining sorted order
+    flock_member_t member_to_add = {(char*)address, provider_id, {NULL, NULL}};
     size_t pos = 0;
-    while (pos < view->members.size && view->members.data[pos].rank < rank) {
+    while (pos < view->members.size && flock_member_cmp(&view->members.data[pos], &member_to_add) < 0) {
         ++pos;
     }
+    // NOTE: the above could be improved using binary search
 
     // Make copy of address
     char* tmp_address = strdup(address);
@@ -328,7 +357,6 @@ static inline flock_member_t* flock_group_view_add_member(
             (view->members.size - pos) * sizeof(flock_member_t));
 
     // Insert the new member
-    view->members.data[pos].rank        = rank;
     view->members.data[pos].provider_id = provider_id;
     view->members.data[pos].address     = tmp_address;
     view->members.data[pos].extra.data  = NULL;
@@ -345,21 +373,24 @@ static inline flock_member_t* flock_group_view_add_member(
 /**
  * @brief Removes a member given its rank.
  *
+ * @important The member pointer must point to a member inside the provided view
+ * (e.g. the member pointer can have been obtained using flock_group_view_find_member).
+ *
  * @param view View from which to remove the member.
- * @param rank Rank of the member to remove.
+ * @param member Pointer to the member to remove.
  *
  * @return true if the member was removed, false if it wasn't found.
  */
-static inline bool flock_group_view_remove_member(flock_group_view_t *view, uint64_t rank)
+static inline bool flock_group_view_remove_member(flock_group_view_t *view, flock_member_t* member)
 {
-    ssize_t idx = flock_group_view_members_binary_search(view, rank);
-    if (idx == -1) return false;
+    // Compute the index of the member in the array
+    ssize_t idx = member - view->members.data;
 
-    flock_member_t* member = &view->members.data[idx];
+    // Verify that the member belongs to this array
+    if (idx < 0 || idx >= (ssize_t)view->members.size) return false;
 
     // Compute the hash of the member to remove
     uint64_t member_hash = flock_hash_member(
-            member->rank,
             member->provider_id,
             member->address);
 
@@ -385,17 +416,46 @@ static inline bool flock_group_view_remove_member(flock_group_view_t *view, uint
  * @brief Find a member from its rank.
  *
  * @param view View in which to search.
- * @param rank Rank of the member to find.
+ * @param address Address of the member to find.
+ * @param provider_id Provider ID of the member to find.
  *
  * @return A pointer to the member, or NULL if not found.
  */
-static inline const flock_member_t *flock_group_view_find_member(const flock_group_view_t *view, uint64_t rank)
+static inline flock_member_t *flock_group_view_find_member(
+    flock_group_view_t *view, const char* address, uint16_t provider_id)
 {
-    ssize_t idx = flock_group_view_members_binary_search(view, rank);
+    ssize_t idx = flock_group_view_members_binary_search(view, address, provider_id);
     if (idx == -1) {
         return NULL; // Member not found
     }
     return &view->members.data[idx];
+}
+
+/**
+ * @brief Return the member at the specified index.
+ *
+ * @param view View in which to search.
+ * @param index Index of the member.
+ *
+ * @return A pointer to the member, or NULL if not found.
+ */
+static inline flock_member_t* flock_group_view_member_at(
+    flock_group_view_t *view, size_t index)
+{
+    if (index >= view->members.size) return NULL;
+    return &view->members.data[index];
+}
+
+/**
+ * @brief Return the number of members in the view.
+ *
+ * @param view View.
+ *
+ * @return The number of members in the view.
+ */
+static inline size_t flock_group_view_member_count(flock_group_view_t* view)
+{
+    return view->members.size;
 }
 
 /**
@@ -430,13 +490,12 @@ static inline ssize_t flock_group_view_metadata_binary_search(
  * key already exists, its value will be replaced.
  *
  * @param view View in which to add the metadata.
- * @param rank Rank of the new metadata.
- * @param provider_id Provider ID of the new metadata.
- * @param address Address of the new member.
+ * @param key Key.
+ * @param value Value.
  *
- * @return true if added, false in case of allocation error.
+ * @return a pointer to a flock_metadata_t if added, NULL in case of an allocation error.
  */
-static inline bool flock_group_view_add_metadata(
+static inline flock_metadata_t* flock_group_view_add_metadata(
         flock_group_view_t *view,
         const char* key,
         const char* value)
@@ -454,7 +513,7 @@ static inline bool flock_group_view_add_metadata(
         view->metadata.data[idx].value = strdup(value);
         // Update the digest
         view->digest ^= old_metadata_hash ^ metadata_hash;
-        return true;
+        return &view->metadata.data[idx];
     }
 
     // Check if there is enough capacity, if not, resize
@@ -465,7 +524,7 @@ static inline bool flock_group_view_add_metadata(
             view->metadata.capacity *= 2;
         flock_metadata_t *temp = (flock_metadata_t *)realloc(
             view->metadata.data, view->metadata.capacity * sizeof(flock_metadata_t));
-        if (!temp) return false;
+        if (!temp) return NULL;
         view->metadata.data = temp;
     }
 
@@ -477,11 +536,11 @@ static inline bool flock_group_view_add_metadata(
 
     // Allocate temporaries
     char* tmp_key = strdup(key);
-    if(!tmp_key) return false;
+    if(!tmp_key) return NULL;
     char* tmp_value = strdup(value);
     if(!tmp_value) {
         free(tmp_key);
-        return false;
+        return NULL;
     }
 
     // Shift elements to make space for the new metadata
@@ -497,7 +556,7 @@ static inline bool flock_group_view_add_metadata(
     // Update the digest
     view->digest ^= metadata_hash;
 
-    return true;
+    return &view->metadata.data[pos];
 }
 
 /**
@@ -545,17 +604,42 @@ static inline const char *flock_group_view_find_metadata(const flock_group_view_
 {
     ssize_t idx = flock_group_view_metadata_binary_search(view, key);
     if (idx == -1) {
-        return NULL; // Member not found
+        return NULL; // Key not found
     }
     return view->metadata.data[idx].value;
+}
+
+/**
+ * @brief Return the metadata at the specified index.
+ *
+ * @param view View in which to search.
+ * @param index Index of the metadata.
+ *
+ * @return A pointer to the metadata, or NULL if not found.
+ */
+static inline flock_metadata_t* flock_group_view_metadata_at(
+    flock_group_view_t *view, size_t index)
+{
+    if (index >= view->metadata.size) return NULL;
+    return &view->metadata.data[index];
+}
+
+/**
+ * @brief Return the number of key/value pairs in the view.
+ *
+ * @param view View.
+ *
+ * @return The number of key/value pairs in the view.
+ */
+static inline size_t flock_group_view_metadata_count(flock_group_view_t* view)
+{
+    return view->metadata.size;
 }
 
 /**
  * @brief Serialize a flock_group_view_t and pass the serialized string
  * to a serializer function pointer.
  *
- * @param mid Margo instance ID.
- * @param credentials Credential associated with the group view.
  * @param v View to serialize.
  * @param serializer Function pointer to call on the serialized group view.
  * @param context User-provided arguments for the serializer.
@@ -563,8 +647,6 @@ static inline const char *flock_group_view_find_metadata(const flock_group_view_
  * @return FLOCK_SUCCESS or other error codes.
  */
 flock_return_t flock_group_view_serialize(
-        margo_instance_id mid,
-        uint64_t credentials,
         const flock_group_view_t* v,
         void (*serializer)(void*, const char*, size_t),
         void* context);
@@ -572,42 +654,33 @@ flock_return_t flock_group_view_serialize(
 /**
  * @brief Serialize a flock_group_view_t into a file.
  *
- * @param mid Margo instance ID.
- * @param credentials Credential associated with the group view.
  * @param v View to serialize.
  * @param filename Name of the file into which to serialize the view.
  *
  * @return FLOCK_SUCCESS or other error codes.
  */
 flock_return_t flock_group_view_serialize_to_file(
-        margo_instance_id mid,
-        uint64_t credentials,
         const flock_group_view_t* v,
         const char* filename);
 
 /**
  * @brief Initialize a group view from a string.
  *
- * @param[in] mid Margo instance ID.
  * @param[in] str String containing the serialized group view.
  * @param[in] str_len Length of the string.
  * @param[out] view View to deserialize.
- * @param[out] credentials Credential value.
  *
  * @return FLOCK_SUCCESS or other error codes.
  */
 flock_return_t flock_group_view_from_string(
-        margo_instance_id mid,
         const char* str,
         size_t str_len,
-        flock_group_view_t* view,
-        uint64_t* credentials);
+        flock_group_view_t* view);
 
 
 /**
  * @brief Initialize a group file from a file.
  *
- * @param[in] mid Margo instance ID.
  * @param[in] filename File to read the view from.
  * @param[out] view View to deserialize.
  * @param[out] credentials Credential value.
@@ -615,10 +688,8 @@ flock_return_t flock_group_view_from_string(
  * @return FLOCK_SUCCESS or other error codes.
  */
 flock_return_t flock_group_view_from_file(
-          margo_instance_id mid,
           const char* filename,
-          flock_group_view_t* view,
-          uint64_t* credentials);
+          flock_group_view_t* view);
 
 /**
  * @brief Serialize/deserialize a group view.
@@ -655,8 +726,6 @@ static inline hg_return_t hg_proc_flock_group_view_t(hg_proc_t proc, void* args)
         view->metadata.capacity = view->metadata.size;
     }
     for(size_t i = 0; i < view->members.size; ++i) {
-        ret = hg_proc_uint64_t(proc, &view->members.data[i].rank);
-        if(ret != HG_SUCCESS) return ret;
         ret = hg_proc_hg_string_t(proc, &view->members.data[i].address);
         if(ret != HG_SUCCESS) return ret;
         ret = hg_proc_uint16_t(proc, &view->members.data[i].provider_id);
