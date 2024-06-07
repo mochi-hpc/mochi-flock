@@ -65,6 +65,8 @@ endif ()
 pkg_check_modules (margo REQUIRED IMPORTED_TARGET margo)
 # search for json-c
 pkg_check_modules (json-c REQUIRED IMPORTED_TARGET json-c)
+# search for thallium
+find_package (thallium REQUIRED)
 
 if (ENABLE_MPI)
     find_package (MPI REQUIRED)

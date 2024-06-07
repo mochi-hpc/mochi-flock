@@ -8,6 +8,7 @@
 
 #include <flock/flock-group.h>
 #include <flock/cxx/exception.hpp>
+#include <stdexcept>
 #include <memory>
 #include <map>
 #include <vector>
@@ -27,9 +28,98 @@ class GroupView {
     public:
 
     struct Member {
-        uint64_t    rank;
-        uint16_t    provider_id;
         std::string address;
+        uint16_t    provider_id;
+    };
+
+    struct Metadata {
+        std::string key;
+        std::string value;
+    };
+
+    struct MembersProxy {
+
+        private:
+
+        friend class GroupView;
+
+        GroupView& m_owner;
+
+        MembersProxy(GroupView& gv)
+        : m_owner(gv) {}
+
+        public:
+
+        MembersProxy(MembersProxy&&) = default;
+
+        void add(const char* address, uint16_t provider_id) {
+            flock_group_view_add_member(&m_owner.m_view, address, provider_id);
+        }
+
+        void remove(size_t index) {
+            auto member = flock_group_view_member_at(&m_owner.m_view, index);
+            if(!flock_group_view_remove_member(&m_owner.m_view, member))
+                throw Exception{FLOCK_ERR_NO_MEMBER};
+        }
+
+        void remove(const char* address, uint16_t provider_id) {
+            auto member = flock_group_view_find_member(&m_owner.m_view, address, provider_id);
+            if(!flock_group_view_remove_member(&m_owner.m_view, member))
+                throw Exception{FLOCK_ERR_NO_MEMBER};
+        }
+
+        bool exists(const char* address, uint16_t provider_id) const {
+            return static_cast<bool>(flock_group_view_find_member(
+                    const_cast<flock_group_view_t*>(&m_owner.m_view), address, provider_id));
+        }
+
+        size_t count() const {
+            return flock_group_view_member_count(&m_owner.m_view);
+        }
+
+        Member operator[](size_t i) const {
+            if(i >= count()) throw std::out_of_range{"Invalid member index"};
+            auto member = flock_group_view_member_at(&m_owner.m_view, i);
+            return Member{member->address, member->provider_id};
+        }
+    };
+
+    struct MetadataProxy {
+
+        private:
+
+        friend class GroupView;
+
+        GroupView& m_owner;
+
+        MetadataProxy(GroupView& gv)
+        : m_owner(gv) {}
+
+        public:
+
+        MetadataProxy(MetadataProxy&&) = default;
+
+        void add(const char* key, const char* value) {
+            flock_group_view_add_metadata(&m_owner.m_view, key, value);
+        }
+
+        void remove(const char* key) {
+            flock_group_view_remove_metadata(&m_owner.m_view, key);
+        }
+
+        size_t count() const {
+            return flock_group_view_metadata_count(&m_owner.m_view);
+        }
+
+        Metadata operator[](size_t i) const {
+            if(i >= count()) throw std::out_of_range{"Invalid metadata index"};
+            auto metadata = flock_group_view_metadata_at(&m_owner.m_view, i);
+            return Metadata{metadata->key, metadata->value};
+        }
+
+        const char* operator[](const char* key) const {
+            return flock_group_view_find_metadata(&m_owner.m_view, key);
+        }
     };
 
     GroupView() = default;
@@ -39,7 +129,7 @@ class GroupView {
     }
 
     ~GroupView() {
-        flock_group_view_clear(&m_view);
+        clear();
     }
 
     GroupView(GroupView&& other) {
@@ -48,7 +138,7 @@ class GroupView {
 
     GroupView& operator=(GroupView&& other) {
         if(this == &other) return *this;
-        flock_group_view_clear(&m_view);
+        clear();
         FLOCK_GROUP_VIEW_MOVE(&other.m_view, &m_view);
         return *this;
     }
@@ -69,68 +159,18 @@ class GroupView {
         flock_group_view_clear(&m_view);
     }
 
-    void addMember(uint64_t rank, const char* address, uint16_t provider_id) {
-        auto member = flock_group_view_add_member(&m_view, rank, provider_id, address);
-        if(!member) throw Exception{FLOCK_ERR_RANK_USED};
+    auto members() {
+        return MembersProxy{*this};
     }
 
-    void removeMember(uint64_t rank) {
-        if(!flock_group_view_remove_member(&m_view, rank))
-            throw Exception{FLOCK_ERR_NO_MEMBER};
+    auto metadata() {
+        return MetadataProxy{*this};
     }
 
-    Member findMember(uint64_t rank) const {
-        auto member = flock_group_view_find_member(&m_view, rank);
-        if(!member) throw Exception{FLOCK_ERR_NO_MEMBER};
-        return Member{member->rank, member->provider_id, member->address};
-    }
-
-    std::vector<Member> members() const {
-        std::vector<Member> result;
-        result.reserve(m_view.members.size);
-        for(size_t i = 0; i < m_view.members.size; ++i) {
-            result.push_back(Member{
-                m_view.members.data[i].rank,
-                m_view.members.data[i].provider_id,
-                m_view.members.data[i].address
-            });
-        }
-        return result;
-    }
-
-    size_t maxNumMembers() const {
-        return m_view.members.data[m_view.members.size-1].rank;
-    }
-
-    size_t numLiveMembers() const {
-        return m_view.members.size;
-    }
-
-    void setMetadata(const char* key, const char* value) {
-        flock_group_view_add_metadata(&m_view, key, value);
-    }
-
-    void removeMetadata(const char* key) {
-        if(!flock_group_view_remove_metadata(&m_view, key))
-            throw Exception{FLOCK_ERR_NO_METADATA};
-    }
-
-    std::map<std::string, std::string> metadata() const {
-        std::map<std::string, std::string> result;
-        for(size_t i = 0; i < m_view.metadata.size; ++i) {
-            result.insert(
-                std::make_pair<const std::string, std::string>(
-                    m_view.metadata.data[i].key,
-                    m_view.metadata.data[i].value));
-        }
-        return result;
-    }
-
-    std::string toString(margo_instance_id mid, uint64_t credentials = 0) const {
+    operator std::string() const {
         std::string result;
         flock_return_t ret = flock_group_view_serialize(
-            mid, credentials, &m_view,
-            [](void* ctx, const char* content, size_t size) {
+            &m_view, [](void* ctx, const char* content, size_t size) {
                 auto str = static_cast<decltype(&result)>(ctx);
                 str->assign(content, size);
             }, static_cast<void*>(&result));

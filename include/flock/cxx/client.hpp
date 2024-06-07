@@ -6,6 +6,7 @@
 #ifndef __FLOCK_CLIENT_HPP
 #define __FLOCK_CLIENT_HPP
 
+#include <thallium.hpp>
 #include <flock/flock-client.h>
 #include <flock/flock-group.h>
 #include <flock/cxx/exception.hpp>
@@ -19,8 +20,15 @@ class Client {
 
     Client() = default;
 
-    Client(margo_instance_id mid, ABT_pool pool = ABT_POOL_NULL) {
+    Client(margo_instance_id mid, ABT_pool pool = ABT_POOL_NULL)
+    : m_engine{mid} {
         auto err = flock_client_init(mid, pool, &m_client);
+        FLOCK_CONVERT_AND_THROW(err);
+    }
+
+    Client(const thallium::engine& engine, thallium::pool pool = thallium::pool())
+    : m_engine{engine} {
+        auto err = flock_client_init(engine.get_margo_instance(), pool.native_handle(), &m_client);
         FLOCK_CONVERT_AND_THROW(err);
     }
 
@@ -68,8 +76,13 @@ class Client {
         return m_client;
     }
 
+    auto engine() const {
+        return m_engine;
+    }
+
     private:
 
+    thallium::engine m_engine;
     flock_client_t m_client = FLOCK_CLIENT_NULL;
 };
 

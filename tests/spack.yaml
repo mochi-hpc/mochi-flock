@@ -3,6 +3,7 @@ spack:
   - cmake
   - pkgconfig
   - mochi-margo ^mercury~boostsys~checksum ^libfabric fabrics=tcp,rxm
+  - mochi-thallium
   - json-c
   - mochi-bedrock
   - mpich

@@ -6,9 +6,11 @@
 #ifndef __FLOCK_CLIENT_HPP
 #define __FLOCK_CLIENT_HPP
 
+#include <thallium.hpp>
 #include <flock/flock-server.h>
 #include <flock/cxx/exception.hpp>
 #include <flock/cxx/group-view.hpp>
+#include <string>
 
 namespace flock {
 
@@ -23,7 +25,6 @@ class Observer {
 
     virtual void onMembershipUpdate(
         flock_update_t update,
-        uint64_t rank,
         const char* address,
         uint16_t provider_id) = 0;
 
@@ -43,12 +44,10 @@ class Provider {
              uint16_t provider_id,
              const char* config,
              GroupView& initial_view,
-             ABT_pool pool = ABT_POOL_NULL,
-             uint64_t credentials = 0) {
+             ABT_pool pool = ABT_POOL_NULL) {
         m_mid = mid;
         flock_provider_args args;
         args.backend      = nullptr;
-        args.credentials  = credentials;
         args.initial_view = &initial_view.m_view;
         args.pool         = pool;
         auto err = flock_provider_register(mid, provider_id, config, &args, &m_provider);
@@ -59,6 +58,17 @@ class Provider {
             self->m_provider = FLOCK_PROVIDER_NULL;
         }, this);
     }
+
+    Provider(const thallium::engine& engine,
+             uint16_t provider_id,
+             const char* config,
+             GroupView& initial_view,
+             const thallium::pool& pool = thallium::pool())
+    : Provider(engine.get_margo_instance(),
+               provider_id,
+               config,
+               initial_view,
+               pool.native_handle()) {}
 
     ~Provider() {
         if(m_provider != FLOCK_PROVIDER_NULL) {
@@ -99,8 +109,8 @@ class Provider {
 
     void addObserver(Observer* observer) {
         auto membership_update_fn =
-            [](void* ctx, flock_update_t update, size_t rank, const char* address, uint16_t provider_id) {
-                static_cast<Observer*>(ctx)->onMembershipUpdate(update, rank, address, provider_id);
+            [](void* ctx, flock_update_t update, const char* address, uint16_t provider_id) {
+                static_cast<Observer*>(ctx)->onMembershipUpdate(update, address, provider_id);
             };
         auto metadata_update_fn =
             [](void* ctx, const char* key, const char* value) {

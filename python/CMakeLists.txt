@@ -1,15 +1,15 @@
 add_library (pyflock_client MODULE src/py-flock-client.cpp)
-target_link_libraries (pyflock_client PRIVATE pybind11::module flock-client PRIVATE coverage_config)
+target_link_libraries (pyflock_client PRIVATE pybind11::module flock-cxx-headers PRIVATE coverage_config)
 pybind11_extension (pyflock_client)
 pybind11_strip (pyflock_client)
 
 add_library (pyflock_server MODULE src/py-flock-server.cpp)
-target_link_libraries (pyflock_server PRIVATE pybind11::module flock-server PRIVATE coverage_config)
+target_link_libraries (pyflock_server PRIVATE pybind11::module flock-cxx-headers PRIVATE coverage_config)
 pybind11_extension (pyflock_server)
 pybind11_strip (pyflock_server)
 
 add_library (pyflock_common MODULE src/py-flock-common.cpp)
-target_link_libraries (pyflock_common PRIVATE pybind11::module flock-client PRIVATE coverage_config)
+target_link_libraries (pyflock_common PRIVATE pybind11::module flock-cxx-headers PRIVATE coverage_config)
 pybind11_extension (pyflock_common)
 pybind11_strip (pyflock_common)
 
