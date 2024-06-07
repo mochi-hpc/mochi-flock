@@ -341,7 +341,7 @@ char* flock_provider_get_config(flock_provider_t provider)
         json_object_object_add(root, "file",
             json_object_new_string(provider->filename));
     }
-    char* result = strdup(json_object_to_json_string(root));
+    char* result = strdup(json_object_to_json_string_ext(root, JSON_C_TO_STRING_NOSLASHESCAPE));
     json_object_put(root);
     return result;
 }

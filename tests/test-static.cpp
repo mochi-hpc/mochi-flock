@@ -55,7 +55,7 @@ TEST_CASE("Test group handle for centralized group", "[centralize]") {
     SECTION("Test provider functionalities") {
         char* config = flock_provider_get_config(group->providers[0]);
         REQUIRE(config != nullptr);
-        const char* expected = R"({ "group": { "type": "static" }, "config": { } })";
+        const char* expected = R"({"group":{"type":"static"},"config":{}})";
         REQUIRE(strcmp(config, expected) == 0);
         free(config);
     }
@@ -94,7 +94,7 @@ TEST_CASE("Test group handle for centralized group", "[centralize]") {
         // test metadata count
         auto metadata_count = flock_group_view_metadata_count(&view);
         REQUIRE(ret == FLOCK_SUCCESS);
-        REQUIRE(metadata_count == 2);
+        REQUIRE(metadata_count == 4); // account for __config__ and __backend__ keys
 
         // test iterate over members
         for(size_t i = 0; i < metadata_count; ++i) {

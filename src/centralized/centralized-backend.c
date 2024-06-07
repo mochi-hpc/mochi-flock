@@ -28,6 +28,7 @@ typedef struct centralized_context {
     bool                 is_primary;
     struct {
         hg_addr_t        address;
+        char*            address_str;
         uint16_t         provider_id;
     } primary;
     flock_group_view_t   view;
@@ -169,7 +170,9 @@ static flock_return_t centralized_destroy_group(void* ctx);
  * {
  *    "ping_timeout_ms": X,
  *    "ping_interval_ms": Y or [Ymin, Ymax],
- *    "ping_max_num_timeouts": Z
+ *    "ping_max_num_timeouts": Z,
+ *    "primary_address": "<some-mercury-address>",
+ *    "primary_provider_id": I
  * }
  * ```
  *
@@ -179,12 +182,16 @@ static flock_return_t centralized_destroy_group(void* ctx);
  * ping_interval_ms may be a list of two values [Ymin,Ymax] instead of a single value Y. If a list
  * is provided, the interval will be drawn randomly from a uniform distribution in the [Ymin,Ymax]
  * range each time.
+ * - primary_address and primary_provider_id are the address and provider ID of the process
+ *   used as primary. If not provided, the provider used will be the first provider in the initial view.
  */
 static flock_return_t centralized_create_group(
         flock_backend_init_args_t* args,
         void** context)
 {
-    flock_return_t ret = FLOCK_SUCCESS;
+    flock_return_t       ret = FLOCK_SUCCESS;
+    centralized_context* ctx = NULL;
+    flock_member_t* primary_member = NULL;
 
     // check that the initial view has at least one member
     if(args->initial_view.members.size == 0) {
@@ -192,16 +199,49 @@ static flock_return_t centralized_create_group(
         return FLOCK_ERR_INVALID_ARGS;
     }
 
-    double   ping_timeout_ms_val   = 1000.0;
-    double   ping_interval_ms_min  = 1000.0;
-    double   ping_interval_ms_max  = 1000.0;
-    unsigned ping_max_num_timeouts = 3;
+    double      ping_timeout_ms_val   = 1000.0;
+    double      ping_interval_ms_min  = 1000.0;
+    double      ping_interval_ms_max  = 1000.0;
+    unsigned    ping_max_num_timeouts = 3;
+    const char* primary_address       = NULL;
+    uint16_t    primary_provider_id   = 0;
 
     if(args->config) {
         if(!json_object_is_type(args->config, json_type_object)) {
             margo_error(args->mid,
                 "[flock] Invalid configuration type for centralized backend (expected object)");
             return FLOCK_ERR_INVALID_CONFIG;
+        }
+        // process "primary_address"
+        struct json_object* primary_address_js =
+            json_object_object_get(args->config, "primary_address");
+        if(primary_address_js) {
+            if(!json_object_is_type(primary_address_js, json_type_string)) {
+                margo_error(args->mid,
+                        "[flock] In centralized backend configuration: "
+                        "\"primary_address\" should be a string");
+                return FLOCK_ERR_INVALID_CONFIG;
+            }
+            primary_address = json_object_get_string(primary_address_js);
+        }
+        // process "primary_provider_id"
+        struct json_object* primary_provider_id_js =
+            json_object_object_get(args->config, "primary_provider_id");
+        if(primary_provider_id_js) {
+            if(!json_object_is_type(primary_provider_id_js, json_type_int)) {
+                margo_error(args->mid,
+                        "[flock] In centralized backend configuration: "
+                        "\"primary_provider_id\" should be an integer");
+                return FLOCK_ERR_INVALID_CONFIG;
+            }
+            int64_t id = json_object_get_int64(primary_provider_id_js);
+            if(id < 0 || id >= UINT16_MAX) {
+                margo_error(args->mid,
+                        "[flock] In centralized backend configuration: "
+                        "invalid value (%ld) for \"primary_provider_id\"", id);
+                return FLOCK_ERR_INVALID_CONFIG;
+            }
+            primary_provider_id = (uint16_t)id;
         }
         // process "ping_timeout_ms"
         struct json_object* ping_timeout_ms =
@@ -272,7 +312,39 @@ static flock_return_t centralized_create_group(
         }
     }
 
-    // fill a json_object structure with the final configuration
+    /* get self address */
+    margo_instance_id mid = args->mid;
+    hg_addr_t self_address;
+    char      self_address_string[256];
+    hg_size_t self_address_size = 256;
+    hg_return_t hret = margo_addr_self(mid, &self_address);
+    if(hret != HG_SUCCESS)
+        return FLOCK_ERR_FROM_MERCURY;
+
+    hret = margo_addr_to_string(mid, self_address_string, &self_address_size, self_address);
+    margo_addr_free(mid, self_address);
+    if(hret != HG_SUCCESS)
+        return FLOCK_ERR_FROM_MERCURY;
+
+    /* check who is the primary member */
+    if(primary_address) {
+        primary_member = flock_group_view_find_member(&args->initial_view, primary_address, primary_provider_id);
+        if(!primary_member) {
+            margo_error(mid, "[flock] In centralized backend configuration: "
+                        "could not find primary member (%s, %d) in initial view",
+                        primary_address, primary_provider_id);
+            return FLOCK_ERR_INVALID_CONFIG;
+        }
+    } else if(!args->join) {
+        primary_member = &args->initial_view.members.data[0];
+    } else {
+        margo_error(mid, "[flock] In centralized backend configuration: "
+                    "\"primary_address\" and \"primary_provider_id\" are "
+                    "required to join the group");
+        return FLOCK_ERR_INVALID_CONFIG;
+    }
+
+    /* fill a json_object structure with the final configuration */
     struct json_object* config = json_object_new_object();
     json_object_object_add(config, "ping_timeout_ms",
         json_object_new_double(ping_timeout_ms_val));
@@ -287,35 +359,14 @@ static flock_return_t centralized_create_group(
     }
     json_object_object_add(config, "ping_max_num_timeouts",
         json_object_new_uint64(ping_max_num_timeouts));
-
-    /* group must have at least one member */
-    if(args->initial_view.members.size == 0)
-        return FLOCK_ERR_INVALID_ARGS;
+    json_object_object_add(config, "primary_address", json_object_new_string(primary_member->address));
+    json_object_object_add(config, "primary_provider_id", json_object_new_int64(primary_member->provider_id));
 
     /* allocate context */
-    centralized_context* ctx = (centralized_context*)calloc(1, sizeof(*ctx));
+    ctx = (centralized_context*)calloc(1, sizeof(*ctx));
     if(!ctx) return FLOCK_ERR_ALLOCATION;
-
-    /* get self address */
-    margo_instance_id mid = args->mid;
     ctx->mid = mid;
-    hg_addr_t self_address;
-    char      self_address_string[256];
-    hg_size_t self_address_size = 256;
-    hg_return_t hret = margo_addr_self(mid, &self_address);
-    if(hret != HG_SUCCESS) {
-        ret = FLOCK_ERR_FROM_MERCURY;
-        goto error;
-    }
-    hret = margo_addr_to_string(mid, self_address_string, &self_address_size, self_address);
-    margo_addr_free(mid, self_address);
-    if(hret != HG_SUCCESS) {
-        ret = FLOCK_ERR_FROM_MERCURY;
-        goto error;
-    }
 
-    /* check who is the primary member */
-    flock_member_t* primary_member = &args->initial_view.members.data[0];
     ctx->is_primary = (primary_member->provider_id == args->provider_id)
                    && (strcmp(primary_member->address, self_address_string) == 0);
 
@@ -341,6 +392,11 @@ static flock_return_t centralized_create_group(
 
     /* move the initial view in the context */
     FLOCK_GROUP_VIEW_MOVE(&args->initial_view, &ctx->view);
+
+    /* make the configuration a metadata value */
+    flock_group_view_add_metadata(&ctx->view,
+        "__config__", json_object_to_json_string_ext(ctx->config, JSON_C_TO_STRING_NOSLASHESCAPE));
+    flock_group_view_add_metadata(&ctx->view, "__type__", "centralized");
 
     /* register the RPCs */
     ctx->ping_rpc_id = MARGO_REGISTER_PROVIDER(
@@ -901,6 +957,7 @@ finish:
 
 static flock_return_t centralized_destroy_group(void* ctx)
 {
+    if(!ctx) return FLOCK_SUCCESS;
     centralized_context* context = (centralized_context*)ctx;
     if(context->is_primary) {
         // Terminate the ULTs that ping the other members

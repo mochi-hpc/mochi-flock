@@ -31,6 +31,11 @@ static flock_return_t static_create_group(
     ctx->config = json_object_new_object();
     FLOCK_GROUP_VIEW_MOVE(&args->initial_view, &ctx->view);
 
+    /* make the configuration a metadata value */
+    flock_group_view_add_metadata(&ctx->view,
+          "__config__", json_object_to_json_string_ext(ctx->config, JSON_C_TO_STRING_NOSLASHESCAPE));
+    flock_group_view_add_metadata(&ctx->view, "__type__", "static");
+
     *context = ctx;
     return FLOCK_SUCCESS;
 }

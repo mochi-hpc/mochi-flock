@@ -111,7 +111,7 @@ TEST_CASE("Test group handle serialization and deserialization", "[serialization
 
             // test flock_group_view_metadata_count
             size_t metadata_count = flock_group_view_metadata_count(&view);
-            REQUIRE(metadata_count == 2);
+            REQUIRE(metadata_count == 4);
 
             // test iterate over metadata
             for(size_t i = 0; i < metadata_count; ++i) {
@@ -178,7 +178,7 @@ TEST_CASE("Test group handle serialization and deserialization", "[serialization
 
             // test flock_group_view_metadata_count
             size_t metadata_count = flock_group_view_metadata_count(&view);
-            REQUIRE(metadata_count == 2);
+            REQUIRE(metadata_count == 4);
 
             // test iterate over metadata
             for(size_t i = 0; i < metadata_count; ++i) {
@@ -224,7 +224,7 @@ TEST_CASE("Test group handle serialization and deserialization", "[serialization
 
         // test flock_group_view_metadata_count
         size_t metadata_count = flock_group_view_metadata_count(&view);
-        REQUIRE(metadata_count == 2);
+        REQUIRE(metadata_count == 4);
 
         // test iterate over metadata
         for(size_t i = 0; i < metadata_count; ++i) {
