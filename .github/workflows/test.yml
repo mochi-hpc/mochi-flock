@@ -52,6 +52,7 @@ jobs:
                  -DENABLE_EXAMPLES=ON \
                  -DENABLE_BEDROCK=ON \
                  -DENABLE_MPI=ON \
+                 -DENABLE_PYTHON=ON \
                  -DCMAKE_BUILD_TYPE=RelWithDebInfo
         make
         make test

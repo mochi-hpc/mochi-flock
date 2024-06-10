@@ -3,8 +3,11 @@ spack:
   - cmake
   - pkgconfig
   - mochi-margo
+  - mochi-thallium
   - json-c
   - mochi-bedrock
+  - py-pybind11
+  - py-mochi-margo
   - mpi
   concretizer:
     unify: true

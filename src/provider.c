@@ -74,7 +74,8 @@ flock_return_t flock_provider_register(
         .initial_view = FLOCK_GROUP_VIEW_INITIALIZER,
         .callback_context = NULL,
         .member_update_callback = dispatch_member_update,
-        .metadata_update_callback = dispatch_metadata_update
+        .metadata_update_callback = dispatch_metadata_update,
+        .join = false
     };
 
     FLOCK_GROUP_VIEW_MOVE(a.initial_view, &backend_init_args.initial_view);
@@ -221,16 +222,16 @@ flock_return_t flock_provider_register(
         goto finish;
         // LCOV_EXCL_STOP
     }
-    backend_init_args.join = true;
     bool is_first = false;
-    for(size_t i = 0; i < backend_init_args.initial_view.members.size; ++i) {
-        flock_member_t* member = &backend_init_args.initial_view.members.data[i];
-        if(member->provider_id != provider_id) continue;
-        if(strcmp(member->address, self_addr_str) != 0) continue;
-        backend_init_args.join = false;
-        is_first = i == 0;
-        break;
+    flock_member_t* mem = flock_group_view_find_member(
+        &backend_init_args.initial_view, self_addr_str, provider_id);
+    if(mem) {
+        if(mem == backend_init_args.initial_view.members.data)
+            is_first = true;
+    } else {
+        backend_init_args.join = true;
     }
+
 
     /* create the new group's context */
     void* context = NULL;

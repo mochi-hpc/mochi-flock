@@ -76,6 +76,12 @@ set_target_properties (flock-bedrock-module
     SOVERSION ${FLOCK_VERSION_MAJOR})
 endif ()
 
+add_library (flock-cxx-headers INTERFACE)
+add_library (flock::headers ALIAS flock-cxx-headers)
+target_link_libraries (flock-cxx-headers
+    INTERFACE PkgConfig::margo thallium flock-client flock-server)
+target_include_directories (flock-cxx-headers INTERFACE $<INSTALL_INTERFACE:include>)
+
 # installation stuff (packaging and install commands)
 write_basic_package_version_file (
     "flock-config-version.cmake"
@@ -101,7 +107,7 @@ configure_file ("flock-client.pc.in" "flock-client.pc" @ONLY)
 configure_file ("config.h.in" "config.h" @ONLY)
 
 # "make install" rules
-install (TARGETS flock-server flock-client
+install (TARGETS flock-server flock-client flock-cxx-headers
          EXPORT flock-targets
          ARCHIVE DESTINATION lib
          LIBRARY DESTINATION lib)
