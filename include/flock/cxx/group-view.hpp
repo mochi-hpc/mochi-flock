@@ -167,6 +167,19 @@ class GroupView {
         return MetadataProxy{*this};
     }
 
+    auto copy() const {
+        auto result = GroupView{};
+        auto members = const_cast<GroupView*>(this)->members();
+        for(size_t i = 0; i < members.count(); ++i) {
+            result.members().add(members[i].address.c_str(), members[i].provider_id);
+        }
+        auto metadata = const_cast<GroupView*>(this)->metadata();
+        for(size_t i = 0; i < metadata.count(); ++i) {
+            result.metadata().add(metadata[i].key.c_str(), metadata[i].value.c_str());
+        }
+        return result;
+    }
+
     operator std::string() const {
         std::string result;
         flock_return_t ret = flock_group_view_serialize(

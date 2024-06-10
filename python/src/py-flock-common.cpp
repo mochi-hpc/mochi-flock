@@ -78,5 +78,6 @@ PYBIND11_MODULE(pyflock_common, m) {
         .def("__str__", [](const flock::GroupView& gv) {
                 return static_cast<std::string>(gv);
         })
+        .def("copy", &flock::GroupView::copy)
         ;
 }

@@ -31,6 +31,7 @@ class GroupHandle:
     def update(self):
         self._internal.update()
 
+    @property
     def view(self):
         return self._internal.view
 
@@ -66,7 +67,7 @@ class Client:
         if isinstance(address, pymargo.core.Address):
             address = str(address)
         return GroupHandle(
-            self._internal.make_service_handle(address=address, provider_id=provider_id),
+            self._internal.make_group_handle(address=address, provider_id=provider_id),
             self)
 
     def make_group_handle_from_file(self, filename: str):
