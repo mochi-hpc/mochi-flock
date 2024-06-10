@@ -75,5 +75,8 @@ PYBIND11_MODULE(pyflock_common, m) {
         .def("unlock", &flock::GroupView::unlock)
         .def_property_readonly("members", &flock::GroupView::members, py11::keep_alive<0, 1>())
         .def_property_readonly("metadata", &flock::GroupView::metadata, py11::keep_alive<0, 1>())
+        .def("__str__", [](const flock::GroupView& gv) {
+                return static_cast<std::string>(gv);
+        })
         ;
 }

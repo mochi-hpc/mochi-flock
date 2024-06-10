@@ -1,4 +1,5 @@
 import unittest
+import json
 from mochi.flock.view import GroupView
 
 
@@ -60,6 +61,33 @@ class TestGroupView(unittest.TestCase):
         view.metadata.remove("key2")
         self.assertEqual(view.metadata.count, 3)
         self.assertIsNone(view.metadata["key2"])
+
+    def test_str(self):
+        view = GroupView()
+        # add 5 metadata
+        for i in range(0, 5):
+            view.metadata.add(
+                key=f"key{i}",
+                value=f"value{i}")
+        view = GroupView()
+        # add 5 members
+        for i in range(0, 5):
+            view.members.add(
+                address=f"address{i}",
+                provider_id=i)
+        v = json.loads(str(view))
+        self.assertIn("members", v)
+        self.assertIn("metadata", v)
+        self.assertIsInstance(v["members"], list)
+        self.assertIsInstance(v["metadata"], dict)
+        for i, member in enumerate(v["members"]):
+            self.assertEqual(member["address"], f"address{i}")
+            self.assertEqual(member["provider_id"], i)
+        i = 0
+        for key, val in v["metadata"]:
+            self.assertEqual(key, f"key{i}")
+            self.assertEqual(val, f"value{i}")
+            i = i + 1
 
     def test_digest(self):
         view = GroupView()
