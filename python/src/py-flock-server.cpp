@@ -19,7 +19,7 @@ typedef py11::capsule pyhg_addr_t;
 #define MID2CAPSULE(__mid)   py11::capsule((void*)(__mid), "margo_instance_id")
 #define CAPSULE2MID(__caps)  (margo_instance_id)(__caps)
 
-PYBIND11_MODULE(pybedrock_server, m) {
+PYBIND11_MODULE(pyflock_server, m) {
     m.doc() = "Flock server python extension";
 
     py11::class_<flock::Provider>(m, "Provider")

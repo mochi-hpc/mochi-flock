@@ -2,6 +2,7 @@ import unittest
 import mochi.flock.client as mfc
 from pymargo.core import Engine
 
+
 class TestClient(unittest.TestCase):
 
     def test_init_client_from_address(self):

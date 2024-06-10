@@ -23,4 +23,4 @@ class Provider:
 
     def __init__(self, engine: pymargo.core.Engine, provider_id: int, config: str, initial_view: GroupView):
         self._internal = pyflock_server.Provider(
-            self._engine.get_internal_mid(), provider_id, config, initial_view)
+            engine.get_internal_mid(), provider_id, config, initial_view)
