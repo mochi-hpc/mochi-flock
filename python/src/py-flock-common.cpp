@@ -32,30 +32,39 @@ PYBIND11_MODULE(pyflock_common, m) {
 
     py11::class_<flock::GroupView::MembersProxy>(m, "MembersProxy")
         .def("__len__", &flock::GroupView::MembersProxy::count)
-        .def("count", &flock::GroupView::MembersProxy::count)
-        .def("add", &flock::GroupView::MembersProxy::add)
+        .def_property_readonly("count", &flock::GroupView::MembersProxy::count)
+        .def("add", &flock::GroupView::MembersProxy::add,
+             "address"_a, "provider_id"_a)
         .def("remove", [](flock::GroupView::MembersProxy& proxy, size_t i) {
             proxy.remove(i);
-        })
+        }, "index"_a)
         .def("remove", [](flock::GroupView::MembersProxy& proxy, const char* address, uint16_t provider_id) {
             proxy.remove(address, provider_id);
-        })
-        .def("exists", &flock::GroupView::MembersProxy::exists)
-        .def("__getitem__", &flock::GroupView::MembersProxy::operator[])
+        }, "address"_a, "provider_id"_a)
+        .def("exists", &flock::GroupView::MembersProxy::exists,
+             "address"_a, "provider_id"_a)
+        .def("__getitem__", &flock::GroupView::MembersProxy::operator[],
+             "index"_a)
         .def("__delitem__", [](flock::GroupView::MembersProxy& proxy, size_t i) {
             proxy.remove(i);
-        })
+        }, "index"_a)
         ;
 
     py11::class_<flock::GroupView::MetadataProxy>(m, "MetadataProxy")
         .def("__len__", &flock::GroupView::MetadataProxy::count)
-        .def("count", &flock::GroupView::MetadataProxy::count)
-        .def("add", &flock::GroupView::MetadataProxy::add)
-        .def("remove", &flock::GroupView::MetadataProxy::remove)
-        .def("__getitem__", [](flock::GroupView::MetadataProxy& proxy, const char* key) {
-            return proxy[key];
-        })
-        .def("__delitem__", &flock::GroupView::MetadataProxy::remove)
+        .def_property_readonly("count", &flock::GroupView::MetadataProxy::count)
+        .def("add", &flock::GroupView::MetadataProxy::add,
+             "key"_a, "value"_a)
+        .def("remove", &flock::GroupView::MetadataProxy::remove,
+             "key"_a)
+        .def("__getitem__", [](flock::GroupView::MetadataProxy& proxy, const std::string& key) {
+            return proxy[key.c_str()];
+        }, "key"_a)
+        .def("__getitem__", [](flock::GroupView::MetadataProxy& proxy, size_t index) {
+            return proxy[index];
+        }, "index"_a)
+        .def("__delitem__", &flock::GroupView::MetadataProxy::remove,
+           "key"_a)
         ;
 
     py11::class_<flock::GroupView>(m, "GroupView")
