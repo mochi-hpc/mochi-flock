@@ -20,5 +20,5 @@ install (TARGETS pyflock_client pyflock_server pyflock_common
          ARCHIVE DESTINATION lib/python${PY_VERSION}/site-packages
          LIBRARY DESTINATION lib/python${PY_VERSION}/site-packages)
 
-install (DIRECTORY mochi/bedrock
+install (DIRECTORY mochi/flock
          DESTINATION lib/python${PY_VERSION}/site-packages/mochi)
