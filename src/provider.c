@@ -33,18 +33,27 @@ static void dispatch_metadata_update(
 static DECLARE_MARGO_RPC_HANDLER(flock_get_view_ult)
 static void flock_get_view_ult(hg_handle_t h);
 
-struct serialize_view_to_file_args {
-    margo_instance_id mid;
-    const char* filename;
-};
-
 static inline void serialize_view_to_file(void* uargs, const flock_group_view_t* view)
 {
-    struct serialize_view_to_file_args* args = (struct serialize_view_to_file_args*)uargs;
-    flock_return_t ret = flock_group_view_serialize_to_file(view, args->filename);
+    flock_provider_t provider = (flock_provider_t)uargs;
+
+    if(!provider->filename) return;
+
+    /* only the first process of the view is allowed to serialize to the group file */
+    FLOCK_GROUP_VIEW_LOCK((flock_group_view_t*)view);
+    flock_member_t* first_member = flock_group_view_member_at((flock_group_view_t*)view, 0);
+    if(!first_member || first_member->provider_id != provider->provider_id
+    || strcmp(first_member->address, provider->self_addr_str) != 0) {
+        FLOCK_GROUP_VIEW_UNLOCK((flock_group_view_t*)view);
+        return;
+    }
+    FLOCK_GROUP_VIEW_UNLOCK((flock_group_view_t*)view);
+
+    flock_return_t ret = flock_group_view_serialize_to_file(view, provider->filename);
     if(ret != FLOCK_SUCCESS) {
         // LCOV_EXCL_START
-        margo_warning(args->mid, "[flock] Could not write group file \"%s\"", args->filename);
+        margo_warning(provider->mid,
+                      "[flock] Could not write group file \"%s\"", provider->filename);
         // LCOV_EXCL_STOP
     }
 }
@@ -105,7 +114,7 @@ flock_return_t flock_provider_register(
 
     /* parse json configuration */
     if (config_str) {
-        struct json_tokener*    tokener = json_tokener_new();
+        struct json_tokener* tokener = json_tokener_new();
         enum json_tokener_error jerr;
         config = json_tokener_parse_ex(
                 tokener, config_str,
@@ -194,16 +203,7 @@ flock_return_t flock_provider_register(
     p->update_callbacks = NULL;
     backend_init_args.callback_context = p;
 
-    /* register RPCs */
-    id = MARGO_REGISTER_PROVIDER(mid, "flock_get_view",
-            get_view_in_t, get_view_out_t,
-            flock_get_view_ult, provider_id, p->pool);
-    margo_register_data(mid, id, (void*)p, NULL);
-    p->get_view_id = id;
-    /* FIXME: add other RPC registration here */
-    /* ... */
-
-    /* find out if this provider is already part of the initial view */
+    /* get the address of this provider as a string */
     char self_addr_str[256];
     hg_size_t self_addr_str_size = 256;
     hg_addr_t self_addr = HG_ADDR_NULL;
@@ -222,16 +222,19 @@ flock_return_t flock_provider_register(
         goto finish;
         // LCOV_EXCL_STOP
     }
-    bool is_first = false;
-    flock_member_t* mem = flock_group_view_find_member(
-        &backend_init_args.initial_view, self_addr_str, provider_id);
-    if(mem) {
-        if(mem == backend_init_args.initial_view.members.data)
-            is_first = true;
-    } else {
-        backend_init_args.join = true;
-    }
+    p->self_addr_str = strdup(self_addr_str);
 
+    if(!flock_group_view_find_member(&backend_init_args.initial_view, self_addr_str, provider_id))
+        backend_init_args.join = true;
+
+    /* register RPCs */
+    id = MARGO_REGISTER_PROVIDER(mid, "flock_get_view",
+            get_view_in_t, get_view_out_t,
+            flock_get_view_ult, provider_id, p->pool);
+    margo_register_data(mid, id, (void*)p, NULL);
+    p->get_view_id = id;
+    /* FIXME: add other RPC registration here */
+    /* ... */
 
     /* create the new group's context */
     void* context = NULL;
@@ -254,15 +257,8 @@ flock_return_t flock_provider_register(
     /* set the provider's identity */
     margo_provider_register_identity(mid, provider_id, "flock");
 
-    struct serialize_view_to_file_args ser_args = {
-        .mid         = mid,
-        .filename    = filename
-    };
-
     /* write the current view of the group */
-    if(is_first && p->filename) {
-        p->group->fn->get_view(context, serialize_view_to_file, &ser_args);
-    }
+    p->group->fn->get_view(context, serialize_view_to_file, p);
 
     if(provider)
         *provider = p;
@@ -273,8 +269,8 @@ finish:
     flock_group_view_clear(&backend_init_args.initial_view);
     if(ret != FLOCK_SUCCESS)
         flock_finalize_provider(p);
-    if(config) json_object_put(config);
     if(group_config) json_object_put(group_config);
+    if(config) json_object_put(config);
     return ret;
 }
 
@@ -302,6 +298,7 @@ static void flock_finalize_provider(void* p)
         provider->group->fn->destroy_group(provider->group->ctx);
     free(provider->group);
     free(provider->filename);
+    free(provider->self_addr_str);
     margo_instance_id mid = provider->mid;
     free(provider);
     margo_trace(mid, "[flock] Provider successfuly finalized");
@@ -495,6 +492,10 @@ static void dispatch_member_update(
         (c->member_cb)(c->args, u, address, provider_id);
         c = c->next;
     }
+    /* write the current view of the group */
+    provider->group->fn->get_view(
+        provider->group->ctx,
+        serialize_view_to_file, provider);
     ABT_rwlock_unlock(provider->update_callbacks_lock);
 }
 
@@ -508,5 +509,9 @@ static void dispatch_metadata_update(
         (c->metadata_cb)(c->args, key, value);
         c = c->next;
     }
+    /* write the current view of the group */
+    provider->group->fn->get_view(
+        provider->group->ctx,
+        serialize_view_to_file, provider);
     ABT_rwlock_unlock(provider->update_callbacks_lock);
 }

@@ -25,10 +25,11 @@ struct update_callback {
 
 typedef struct flock_provider {
     /* Margo/Argobots/Mercury environment */
-    margo_instance_id   mid;         // Margo instance
-    uint16_t            provider_id; // Provider id
-    ABT_pool            pool;        // Pool on which to post RPC requests
-    char*               filename;    // Default group file name
+    margo_instance_id   mid;           // Margo instance
+    uint16_t            provider_id;   // Provider id
+    ABT_pool            pool;          // Pool on which to post RPC requests
+    char*               filename;      // Default group file name
+    char*               self_addr_str; // Address of this provider
     /* Group implementation */
     flock_group* group;
     /* List of registered membership and metadata callbacks */

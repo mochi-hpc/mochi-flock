@@ -202,17 +202,17 @@ static flock_return_t centralized_create_group(
     // the config if made of the content of the __config__ field in the metadata
     // (which would have been produced if for instance the view comes from a file),
     // completed by args->config. __config__ has precedence over args->config.
-    struct json_object* __config__ = NULL;
-    const char* __config__str = flock_group_view_find_metadata(&args->initial_view, "__config__");
-    if(__config__str) {
-        __config__ = json_tokener_parse(__config__str);
-        if(!__config__) {
+    struct json_object* md_config = NULL;
+    const char* md_config_str = flock_group_view_find_metadata(&args->initial_view, "__config__");
+    if(md_config_str) {
+        md_config = json_tokener_parse(md_config_str);
+        if(!md_config) {
             margo_error(args->mid,
                 "[flock] Could not parse __config__ value from initial_view");
             return FLOCK_ERR_INVALID_ARGS;
         }
     } else {
-        __config__ = json_object_new_object();
+        md_config = json_object_new_object();
     }
     // add key/values from args->config
     if(args->config) {
@@ -223,8 +223,9 @@ static flock_return_t centralized_create_group(
             goto error;
         }
         json_object_object_foreach(args->config, key, val) {
-            if(!json_object_object_get(__config__, key)) {
-                json_object_object_add(__config__, key, val);
+            if(!json_object_object_get(md_config, key)) {
+                json_object_get(val);
+                json_object_object_add(md_config, key, val);
             }
         }
     }
@@ -237,7 +238,7 @@ static flock_return_t centralized_create_group(
     uint16_t    primary_provider_id   = 0;
 
     // process "primary_address"
-    struct json_object* primary_address_js = json_object_object_get(__config__, "primary_address");
+    struct json_object* primary_address_js = json_object_object_get(md_config, "primary_address");
     if(primary_address_js) {
         if(!json_object_is_type(primary_address_js, json_type_string)) {
             margo_error(args->mid,
@@ -249,7 +250,7 @@ static flock_return_t centralized_create_group(
         primary_address = json_object_get_string(primary_address_js);
     }
     // process "primary_provider_id"
-    struct json_object* primary_provider_id_js = json_object_object_get(__config__, "primary_provider_id");
+    struct json_object* primary_provider_id_js = json_object_object_get(md_config, "primary_provider_id");
     if(primary_provider_id_js) {
         if(!json_object_is_type(primary_provider_id_js, json_type_int)) {
             margo_error(args->mid,
@@ -269,7 +270,7 @@ static flock_return_t centralized_create_group(
         primary_provider_id = (uint16_t)id;
     }
     // process "ping_timeout_ms"
-    struct json_object* ping_timeout_ms = json_object_object_get(__config__, "ping_timeout_ms");
+    struct json_object* ping_timeout_ms = json_object_object_get(md_config, "ping_timeout_ms");
     if(ping_timeout_ms) {
         if(json_object_is_type(ping_timeout_ms, json_type_double)) {
             ping_timeout_ms_val = json_object_get_double(ping_timeout_ms);
@@ -289,7 +290,7 @@ static flock_return_t centralized_create_group(
         }
     }
     // process "ping_interval_ms"
-    struct json_object* ping_interval_ms_pair = json_object_object_get(__config__, "ping_interval_ms");
+    struct json_object* ping_interval_ms_pair = json_object_object_get(md_config, "ping_interval_ms");
     if(ping_interval_ms_pair) {
         if(json_object_is_type(ping_interval_ms_pair, json_type_double)) {
             // ping_interval_ms is a single number
@@ -319,7 +320,7 @@ static flock_return_t centralized_create_group(
         }
     }
     // process ping_max_num_timeouts
-    struct json_object* ping_max_num_timeouts_json = json_object_object_get(__config__, "ping_max_num_timeouts");
+    struct json_object* ping_max_num_timeouts_json = json_object_object_get(md_config, "ping_max_num_timeouts");
     if(ping_max_num_timeouts_json) {
         if(!json_object_is_type(ping_max_num_timeouts_json, json_type_int)) {
             margo_error(args->mid,
@@ -500,7 +501,7 @@ static flock_return_t centralized_create_group(
     *context = ctx;
 
 finish:
-    json_object_put(__config__);
+    json_object_put(md_config);
     return ret;
 
 error:
