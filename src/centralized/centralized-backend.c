@@ -199,6 +199,36 @@ static flock_return_t centralized_create_group(
         return FLOCK_ERR_INVALID_ARGS;
     }
 
+    // the config if made of the content of the __config__ field in the metadata
+    // (which would have been produced if for instance the view comes from a file),
+    // completed by args->config. __config__ has precedence over args->config.
+    struct json_object* __config__ = NULL;
+    const char* __config__str = flock_group_view_find_metadata(&args->initial_view, "__config__");
+    if(__config__str) {
+        __config__ = json_tokener_parse(__config__str);
+        if(!__config__) {
+            margo_error(args->mid,
+                "[flock] Could not parse __config__ value from initial_view");
+            return FLOCK_ERR_INVALID_ARGS;
+        }
+    } else {
+        __config__ = json_object_new_object();
+    }
+    // add key/values from args->config
+    if(args->config) {
+        if(!json_object_is_type(args->config, json_type_object)) {
+            margo_error(args->mid,
+                "[flock] Invalid configuration type for centralized backend (expected object)");
+            ret = FLOCK_ERR_INVALID_CONFIG;
+            goto error;
+        }
+        json_object_object_foreach(args->config, key, val) {
+            if(!json_object_object_get(__config__, key)) {
+                json_object_object_add(__config__, key, val);
+            }
+        }
+    }
+
     double      ping_timeout_ms_val   = 1000.0;
     double      ping_interval_ms_min  = 1000.0;
     double      ping_interval_ms_max  = 1000.0;
@@ -206,110 +236,107 @@ static flock_return_t centralized_create_group(
     const char* primary_address       = NULL;
     uint16_t    primary_provider_id   = 0;
 
-    if(args->config) {
-        if(!json_object_is_type(args->config, json_type_object)) {
+    // process "primary_address"
+    struct json_object* primary_address_js = json_object_object_get(__config__, "primary_address");
+    if(primary_address_js) {
+        if(!json_object_is_type(primary_address_js, json_type_string)) {
             margo_error(args->mid,
-                "[flock] Invalid configuration type for centralized backend (expected object)");
-            return FLOCK_ERR_INVALID_CONFIG;
+                    "[flock] In centralized backend configuration: "
+                    "\"primary_address\" should be a string");
+            ret = FLOCK_ERR_INVALID_CONFIG;
+            goto error;
         }
-        // process "primary_address"
-        struct json_object* primary_address_js =
-            json_object_object_get(args->config, "primary_address");
-        if(primary_address_js) {
-            if(!json_object_is_type(primary_address_js, json_type_string)) {
-                margo_error(args->mid,
-                        "[flock] In centralized backend configuration: "
-                        "\"primary_address\" should be a string");
-                return FLOCK_ERR_INVALID_CONFIG;
-            }
-            primary_address = json_object_get_string(primary_address_js);
+        primary_address = json_object_get_string(primary_address_js);
+    }
+    // process "primary_provider_id"
+    struct json_object* primary_provider_id_js = json_object_object_get(__config__, "primary_provider_id");
+    if(primary_provider_id_js) {
+        if(!json_object_is_type(primary_provider_id_js, json_type_int)) {
+            margo_error(args->mid,
+                    "[flock] In centralized backend configuration: "
+                    "\"primary_provider_id\" should be an integer");
+            ret = FLOCK_ERR_INVALID_CONFIG;
+            goto error;
         }
-        // process "primary_provider_id"
-        struct json_object* primary_provider_id_js =
-            json_object_object_get(args->config, "primary_provider_id");
-        if(primary_provider_id_js) {
-            if(!json_object_is_type(primary_provider_id_js, json_type_int)) {
-                margo_error(args->mid,
-                        "[flock] In centralized backend configuration: "
-                        "\"primary_provider_id\" should be an integer");
-                return FLOCK_ERR_INVALID_CONFIG;
-            }
-            int64_t id = json_object_get_int64(primary_provider_id_js);
-            if(id < 0 || id >= UINT16_MAX) {
-                margo_error(args->mid,
-                        "[flock] In centralized backend configuration: "
-                        "invalid value (%ld) for \"primary_provider_id\"", id);
-                return FLOCK_ERR_INVALID_CONFIG;
-            }
-            primary_provider_id = (uint16_t)id;
+        int64_t id = json_object_get_int64(primary_provider_id_js);
+        if(id < 0 || id >= UINT16_MAX) {
+            margo_error(args->mid,
+                    "[flock] In centralized backend configuration: "
+                    "invalid value (%ld) for \"primary_provider_id\"", id);
+            ret = FLOCK_ERR_INVALID_CONFIG;
+            goto error;
         }
-        // process "ping_timeout_ms"
-        struct json_object* ping_timeout_ms =
-            json_object_object_get(args->config, "ping_timeout_ms");
-        if(ping_timeout_ms) {
-            if(json_object_is_type(ping_timeout_ms, json_type_double)) {
-                ping_timeout_ms_val = json_object_get_double(ping_timeout_ms);
-            } else {
-                margo_error(args->mid,
-                        "[flock] In centralized backend configuration: "
-                        "\"ping_timeout_ms\" should be a number");
-                return FLOCK_ERR_INVALID_CONFIG;
-            }
-            if(ping_timeout_ms_val < 0) {
-                margo_error(args->mid,
-                        "[flock] In centralized backend configuration: "
-                        "\"ping_timeout_ms\" should be positive");
-                return FLOCK_ERR_INVALID_CONFIG;
-            }
+        primary_provider_id = (uint16_t)id;
+    }
+    // process "ping_timeout_ms"
+    struct json_object* ping_timeout_ms = json_object_object_get(__config__, "ping_timeout_ms");
+    if(ping_timeout_ms) {
+        if(json_object_is_type(ping_timeout_ms, json_type_double)) {
+            ping_timeout_ms_val = json_object_get_double(ping_timeout_ms);
+        } else {
+            margo_error(args->mid,
+                    "[flock] In centralized backend configuration: "
+                    "\"ping_timeout_ms\" should be a number");
+            ret = FLOCK_ERR_INVALID_CONFIG;
+            goto error;
         }
-        // process "ping_interval_ms"
-        struct json_object* ping_interval_ms_pair =
-            json_object_object_get(args->config, "ping_interval_ms");
-        if(ping_interval_ms_pair) {
-            if(json_object_is_type(ping_interval_ms_pair, json_type_double)) {
-                // ping_interval_ms is a single number
-                ping_interval_ms_min = ping_interval_ms_max = json_object_get_double(ping_interval_ms_pair);
-            } else if(json_object_is_type(ping_interval_ms_pair, json_type_array)
-            && json_object_array_length(ping_interval_ms_pair) == 2) {
-                // ping_timeout_ms is an array of two numbers (min and max)
-                struct json_object* a = json_object_array_get_idx(ping_interval_ms_pair, 0);
-                struct json_object* b = json_object_array_get_idx(ping_interval_ms_pair, 1);
-                if(!(json_object_is_type(a, json_type_double) && json_object_is_type(b, json_type_double))) {
-                    margo_error(args->mid,
+        if(ping_timeout_ms_val < 0) {
+            margo_error(args->mid,
+                    "[flock] In centralized backend configuration: "
+                    "\"ping_timeout_ms\" should be positive");
+            ret = FLOCK_ERR_INVALID_CONFIG;
+            goto error;
+        }
+    }
+    // process "ping_interval_ms"
+    struct json_object* ping_interval_ms_pair = json_object_object_get(__config__, "ping_interval_ms");
+    if(ping_interval_ms_pair) {
+        if(json_object_is_type(ping_interval_ms_pair, json_type_double)) {
+            // ping_interval_ms is a single number
+            ping_interval_ms_min = ping_interval_ms_max = json_object_get_double(ping_interval_ms_pair);
+        } else if(json_object_is_type(ping_interval_ms_pair, json_type_array)
+                && json_object_array_length(ping_interval_ms_pair) == 2) {
+            // ping_timeout_ms is an array of two numbers (min and max)
+            struct json_object* a = json_object_array_get_idx(ping_interval_ms_pair, 0);
+            struct json_object* b = json_object_array_get_idx(ping_interval_ms_pair, 1);
+            if(!(json_object_is_type(a, json_type_double) && json_object_is_type(b, json_type_double))) {
+                margo_error(args->mid,
                         "[flock] In centralized backend configuration: "
                         "\"ping_interval_ms\" should be an array of two numbers");
-                    return FLOCK_ERR_INVALID_CONFIG;
-                }
-                ping_interval_ms_min = json_object_get_double(a);
-                ping_interval_ms_max = json_object_get_double(b);
-                if(ping_interval_ms_min > ping_interval_ms_max
-                || ping_interval_ms_min < 0 || ping_interval_ms_max < 0) {
-                    margo_error(args->mid,
+                ret = FLOCK_ERR_INVALID_CONFIG;
+                goto error;
+            }
+            ping_interval_ms_min = json_object_get_double(a);
+            ping_interval_ms_max = json_object_get_double(b);
+            if(ping_interval_ms_min > ping_interval_ms_max
+                    || ping_interval_ms_min < 0 || ping_interval_ms_max < 0) {
+                margo_error(args->mid,
                         "[flock] In centralized backend configuration: "
                         "invalid values or order in \"ping_interval_ms\" array");
-                    return FLOCK_ERR_INVALID_CONFIG;
-                }
+                ret = FLOCK_ERR_INVALID_CONFIG;
+                goto error;
             }
         }
-        // process ping_max_num_timeouts
-        struct json_object* ping_max_num_timeouts_json =
-            json_object_object_get(args->config, "ping_max_num_timeouts");
-        if(ping_max_num_timeouts_json) {
-            if(!json_object_is_type(ping_max_num_timeouts_json, json_type_int)) {
-                margo_error(args->mid,
+    }
+    // process ping_max_num_timeouts
+    struct json_object* ping_max_num_timeouts_json = json_object_object_get(__config__, "ping_max_num_timeouts");
+    if(ping_max_num_timeouts_json) {
+        if(!json_object_is_type(ping_max_num_timeouts_json, json_type_int)) {
+            margo_error(args->mid,
                     "[flock] In centralized backend configuration: "
                     "\"ping_max_num_timeouts\" should be an integer");
-                return FLOCK_ERR_INVALID_CONFIG;
-            }
-            int x = json_object_get_int(ping_max_num_timeouts_json);
-            if(x < 1) {
-                margo_error(args->mid,
-                        "[flock] In centralized backend configuration: "
-                        "\"ping_max_num_timeouts\" should be > 1");
-                return FLOCK_ERR_INVALID_CONFIG;
-            }
-            ping_max_num_timeouts = (unsigned)x;
+            ret = FLOCK_ERR_INVALID_CONFIG;
+            goto error;
         }
+        int x = json_object_get_int(ping_max_num_timeouts_json);
+        if(x < 1) {
+            margo_error(args->mid,
+                    "[flock] In centralized backend configuration: "
+                    "\"ping_max_num_timeouts\" should be > 1");
+            ret = FLOCK_ERR_INVALID_CONFIG;
+            goto error;
+        }
+        ping_max_num_timeouts = (unsigned)x;
     }
 
     /* get self address */
@@ -318,22 +345,28 @@ static flock_return_t centralized_create_group(
     char      self_address_string[256];
     hg_size_t self_address_size = 256;
     hg_return_t hret = margo_addr_self(mid, &self_address);
-    if(hret != HG_SUCCESS)
-        return FLOCK_ERR_FROM_MERCURY;
+    if(hret != HG_SUCCESS) {
+        ret = FLOCK_ERR_FROM_MERCURY;
+        goto error;
+    }
 
     hret = margo_addr_to_string(mid, self_address_string, &self_address_size, self_address);
     margo_addr_free(mid, self_address);
-    if(hret != HG_SUCCESS)
-        return FLOCK_ERR_FROM_MERCURY;
+    if(hret != HG_SUCCESS) {
+        ret = FLOCK_ERR_FROM_MERCURY;
+        goto error;
+    }
 
     /* check who is the primary member */
     if(primary_address) {
-        primary_member = flock_group_view_find_member(&args->initial_view, primary_address, primary_provider_id);
+        primary_member = flock_group_view_find_member(
+                &args->initial_view, primary_address, primary_provider_id);
         if(!primary_member) {
             margo_error(mid, "[flock] In centralized backend configuration: "
                         "could not find primary member (%s, %d) in initial view",
                         primary_address, primary_provider_id);
-            return FLOCK_ERR_INVALID_CONFIG;
+            ret = FLOCK_ERR_INVALID_CONFIG;
+            goto error;
         }
     } else if(!args->join) {
         primary_member = &args->initial_view.members.data[0];
@@ -341,7 +374,8 @@ static flock_return_t centralized_create_group(
         margo_error(mid, "[flock] In centralized backend configuration: "
                     "\"primary_address\" and \"primary_provider_id\" are "
                     "required to join the group");
-        return FLOCK_ERR_INVALID_CONFIG;
+        ret = FLOCK_ERR_INVALID_CONFIG;
+        goto error;
     }
 
     /* fill a json_object structure with the final configuration */
@@ -364,7 +398,10 @@ static flock_return_t centralized_create_group(
 
     /* allocate context */
     ctx = (centralized_context*)calloc(1, sizeof(*ctx));
-    if(!ctx) return FLOCK_ERR_ALLOCATION;
+    if(!ctx) {
+       ret = FLOCK_ERR_ALLOCATION;
+       goto error;
+    }
     ctx->mid = mid;
 
     ctx->is_primary = (primary_member->provider_id == args->provider_id)
@@ -461,11 +498,14 @@ static flock_return_t centralized_create_group(
     }
 
     *context = ctx;
-    return FLOCK_SUCCESS;
+
+finish:
+    json_object_put(__config__);
+    return ret;
 
 error:
     centralized_destroy_group(ctx);
-    return ret;
+    goto finish;
 }
 
 // -------------------------------------------------------------------------------

@@ -72,9 +72,16 @@ static int flock_register_provider(
         return FLOCK_ERR_INVALID_CONFIG;
 #endif
     } else if(strcmp(bootstrap_str, "join") == 0) {
-        // TODO
-    } else if(strcmp(bootstrap_str, "file") == 0) {
-        // TODO
+        struct json_object* filename = json_object_object_get(config, "file");
+        if(!filename || !json_object_is_type(filename, json_type_string)) {
+            margo_error(mid, "[flock] \"file\" field not found (or is not a string) "
+                             "required to join the group");
+            json_object_put(config);
+            return FLOCK_ERR_INVALID_CONFIG;
+        }
+        const char* filename_str = json_object_get_string(filename);
+        ret = flock_group_view_init_from_file(filename_str, &initial_view);
+        if(ret != FLOCK_SUCCESS) goto finish;
     } else {
         margo_error(mid, "[flock] Invalid value \"%s\" for \"bootstrap\" field", bootstrap_str);
         json_object_put(config);
