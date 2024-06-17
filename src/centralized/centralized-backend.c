@@ -839,6 +839,7 @@ finish:
 
 static flock_return_t join(centralized_context* ctx, uint16_t provider_id)
 {
+    flock_return_t ret = FLOCK_SUCCESS;
     hg_return_t hret   = HG_SUCCESS;
     hg_handle_t handle = HG_HANDLE_NULL;
     join_in_t in = {
@@ -854,6 +855,7 @@ static flock_return_t join(centralized_context* ctx, uint16_t provider_id)
         // LCOV_EXCL_START
         margo_error(ctx->mid, "[flock] Could not create hg_handle for join RPC: %s",
                     HG_Error_to_string(hret));
+        ret = FLOCK_ERR_FROM_MERCURY;
         goto finish;
         // LCOV_EXCL_STOP
     }
@@ -863,6 +865,7 @@ static flock_return_t join(centralized_context* ctx, uint16_t provider_id)
         // LCOV_EXCL_START
         margo_error(ctx->mid, "[flock] Could not create hg_handle for join RPC: %s",
                     HG_Error_to_string(hret));
+        ret = FLOCK_ERR_FROM_MERCURY;
         goto finish;
         // LCOV_EXCL_STOP
     }
@@ -872,6 +875,7 @@ static flock_return_t join(centralized_context* ctx, uint16_t provider_id)
         // LCOV_EXCL_START
         margo_error(ctx->mid, "[flock] Could not get output from join RPC: %s",
                     HG_Error_to_string(hret));
+        ret = FLOCK_ERR_FROM_MERCURY;
         goto finish;
         // LCOV_EXCL_STOP
     }
@@ -880,7 +884,7 @@ static flock_return_t join(centralized_context* ctx, uint16_t provider_id)
 
 finish:
     if(handle) margo_destroy(handle);
-    return FLOCK_SUCCESS;
+    return ret;
 }
 
 // -------------------------------------------------------------------------------
