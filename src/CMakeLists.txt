@@ -10,7 +10,8 @@ set (client-src-files
 
 set (backend-src-files
      static/static-backend.c
-     centralized/centralized-backend.c)
+     centralized/centralized-backend.c
+     swim/swim-backend.c)
 
 set (bedrock-module-src-files
      bedrock-module.c)
