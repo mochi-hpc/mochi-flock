@@ -5,7 +5,7 @@ spack:
   - mochi-margo ^mercury~boostsys~checksum ^libfabric fabrics=tcp,rxm
   - mochi-thallium
   - json-c
-  - mochi-bedrock
+  - mochi-bedrock-module-api
   - mpich
   - py-pybind11
   - py-mochi-margo

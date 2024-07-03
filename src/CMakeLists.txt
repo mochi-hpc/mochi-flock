@@ -61,7 +61,7 @@ set_target_properties (flock-server
 if (${ENABLE_BEDROCK})
 # bedrock-module library
 add_library (flock-bedrock-module ${bedrock-module-src-files})
-target_link_libraries (flock-bedrock-module PRIVATE flock-server flock-client bedrock-server)
+target_link_libraries (flock-bedrock-module PRIVATE flock-server flock-client bedrock::module-api)
 target_include_directories (flock-bedrock-module PUBLIC $<INSTALL_INTERFACE:include>)
 target_include_directories (flock-bedrock-module BEFORE PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>)
