@@ -58,7 +58,7 @@ endif ()
 find_package (PkgConfig REQUIRED)
 
 if (${ENABLE_BEDROCK})
-    find_package (bedrock REQUIRED)
+    find_package (bedrock-module-api REQUIRED)
 endif ()
 
 # search for margo

@@ -5,7 +5,7 @@ spack:
   - mochi-margo
   - mochi-thallium
   - json-c
-  - mochi-bedrock
+  - mochi-bedrock-module-api
   - py-pybind11
   - py-mochi-margo
   - mpi
