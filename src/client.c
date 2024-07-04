@@ -33,6 +33,7 @@ flock_return_t flock_client_init(margo_instance_id mid, ABT_pool pool, flock_cli
 
 flock_return_t flock_client_finalize(flock_client_t client)
 {
+    if(!client) return FLOCK_ERR_INVALID_ARGS;
     if(client->num_group_handles != 0) {
         margo_warning(client->mid,
             "%ld group handles not released when flock_client_finalize was called",
