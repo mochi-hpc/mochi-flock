@@ -983,16 +983,16 @@ static void membership_update_rpc_ult(hg_handle_t h)
 
     FLOCK_GROUP_VIEW_LOCK(&ctx->view);
     flock_member_t* member = flock_group_view_find_member(&ctx->view, in.address, in.provider_id);
-    if(member) flock_group_view_remove_member(&ctx->view, member);
+    if(member && ((in.update == FLOCK_MEMBER_DIED) || (in.update == FLOCK_MEMBER_LEFT)))
+        flock_group_view_remove_member(&ctx->view, member);
+    else if(in.update == FLOCK_MEMBER_JOINED)
+        flock_group_view_add_member(&ctx->view, in.address, in.provider_id);
     FLOCK_GROUP_VIEW_UNLOCK(&ctx->view);
 
     if(ctx->member_update_callback) {
         (ctx->member_update_callback)(
             ctx->callback_context, in.update, in.address, in.provider_id);
     }
-
-    /* respond with the current view */
-    margo_respond(h, &ctx->view);
 
 finish:
     margo_free_input(h, &in);
