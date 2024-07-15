@@ -20,7 +20,7 @@ option (ENABLE_PYTHON   "Build with Python support" OFF)
 # library version set here (e.g. for shared libs).
 set (FLOCK_VERSION_MAJOR 0)
 set (FLOCK_VERSION_MINOR 3)
-set (FLOCK_VERSION_PATCH 0)
+set (FLOCK_VERSION_PATCH 1)
 set (FLOCK_VERSION
      "${FLOCK_VERSION_MAJOR}.${FLOCK_VERSION_MINOR}.${FLOCK_VERSION_PATCH}")
 
