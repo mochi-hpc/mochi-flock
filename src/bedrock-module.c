@@ -63,7 +63,10 @@ static int flock_register_provider(
         if(ret != FLOCK_SUCCESS) goto finish;
     } else if(strcmp(bootstrap_str, "mpi") == 0) {
 #if ENABLE_MPI
-        MPI_Init(NULL, NULL);
+        int mpi_initialized = 0;
+        MPI_Initialized(&mpi_initialized);
+        if(!mpi_initialized)
+            MPI_Init(NULL, NULL);
         ret = flock_group_view_init_from_mpi(mid, provider_id, MPI_COMM_WORLD, &initial_view);
         if(ret != FLOCK_SUCCESS) goto finish;
 #else
