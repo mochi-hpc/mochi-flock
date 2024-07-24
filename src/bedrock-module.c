@@ -28,6 +28,7 @@ static int flock_register_provider(
     flock_args.pool   = bedrock_args_get_pool(args);
 
     flock_group_view_t initial_view = FLOCK_GROUP_VIEW_INITIALIZER;
+    int* ranks = NULL;
 
     struct json_tokener* tokener = json_tokener_new();
     struct json_object* config = json_tokener_parse_ex(
@@ -56,6 +57,34 @@ static int flock_register_provider(
 
     const char* bootstrap_str = json_object_get_string(bootstrap);
 
+    struct json_object* mpi_ranks = json_object_object_get(config, "mpi_ranks");
+    if(mpi_ranks && strcmp(bootstrap_str, "mpi") != 0) {
+        margo_error(mid, "[flock] \"mpi_ranks\" field should only be provided for \"mpi\" bootstrap");
+        ret = FLOCK_ERR_INVALID_CONFIG;
+        goto finish;
+    }
+
+    if(mpi_ranks && !(json_object_is_type(mpi_ranks, json_type_array))) {
+        margo_error(mid, "[flock] \"mpi_ranks\" field should be an array");
+        ret = FLOCK_ERR_INVALID_CONFIG;
+        goto finish;
+    }
+
+    int num_ranks = 0;
+    if(mpi_ranks) {
+        num_ranks = json_object_array_length(mpi_ranks);
+        ranks = (int*)calloc(num_ranks, sizeof(int));
+        for(int i = 0; i < num_ranks; ++i) {
+            struct json_object* rank = json_object_array_get_idx(mpi_ranks, i);
+            if(!json_object_is_type(rank, json_type_int)) {
+                margo_error(mid, "[flock] \"mpi_ranks\" should contain only integers");
+                ret = FLOCK_ERR_INVALID_CONFIG;
+                goto finish;
+            }
+            ranks[i] = json_object_get_int64(rank);
+        }
+    }
+
     flock_args.initial_view = &initial_view;
 
     if(strcmp(bootstrap_str, "self") == 0) {
@@ -67,7 +96,28 @@ static int flock_register_provider(
         MPI_Initialized(&mpi_initialized);
         if(!mpi_initialized)
             MPI_Init(NULL, NULL);
-        ret = flock_group_view_init_from_mpi(mid, provider_id, MPI_COMM_WORLD, &initial_view);
+        MPI_Comm comm = MPI_COMM_WORLD;
+        int world_size;
+        MPI_Comm_size(comm, &world_size);
+        if(mpi_ranks) {
+            for(int i = 0; i < num_ranks; ++i) {
+                if(ranks[i] >= 0 && ranks[i] < world_size) continue;
+                margo_error(mid, "[flock] Invalid rank %d in \"mpi_ranks\" list", ranks[i]);
+                ret = FLOCK_ERR_INVALID_CONFIG;
+                goto finish;
+            }
+            MPI_Group world_group;
+            MPI_Comm_group(MPI_COMM_WORLD, &world_group);
+            MPI_Group flock_group;
+            MPI_Group_incl(world_group, num_ranks, ranks, &flock_group);
+            MPI_Comm_create_group(MPI_COMM_WORLD, flock_group, 0, &comm);
+            MPI_Group_free(&flock_group);
+            MPI_Group_free(&world_group);
+        }
+
+        ret = flock_group_view_init_from_mpi(mid, provider_id, comm, &initial_view);
+
+        if(mpi_ranks) MPI_Comm_free(&comm);
         if(ret != FLOCK_SUCCESS) goto finish;
 #else
         margo_error(mid, "[flock] Flock was not built with MPI support");
@@ -97,6 +147,7 @@ static int flock_register_provider(
 finish:
     flock_group_view_clear(&initial_view);
     json_object_put(config);
+    free(ranks);
     return ret;
 }
 

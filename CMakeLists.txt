@@ -83,13 +83,13 @@ endif ()
 add_subdirectory (src)
 if (${ENABLE_TESTS})
     enable_testing ()
-    find_package (Catch2 3.0.1 QUIET)
+    find_package (Catch2 3.6.0 QUIET)
     if (NOT Catch2_FOUND)
         include (FetchContent)
         FetchContent_Declare (
             Catch2
             GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-            GIT_TAG        v3.0.1
+            GIT_TAG        v3.6.0
         )
         FetchContent_MakeAvailable (Catch2)
     endif ()
