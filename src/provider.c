@@ -313,7 +313,7 @@ flock_return_t flock_provider_destroy(
     margo_provider_pop_finalize_callback(provider->mid, provider);
     /* call the callback */
     flock_finalize_provider(provider);
-    margo_info(mid, "[flock] Provider successfuly destroyed");
+    margo_trace(mid, "[flock] Provider successfuly destroyed");
     return FLOCK_SUCCESS;
 }
 
@@ -347,7 +347,7 @@ char* flock_provider_get_config(flock_provider_t provider)
 flock_return_t flock_provider_register_backend(
         flock_backend_impl* backend_impl)
 {
-    margo_info(MARGO_INSTANCE_NULL, "Adding backend implementation \"%s\" to FLOCK",
+    margo_trace(MARGO_INSTANCE_NULL, "Adding backend implementation \"%s\" to FLOCK",
                backend_impl->name);
     return add_backend_impl(backend_impl);
 }
