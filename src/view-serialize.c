@@ -204,7 +204,7 @@ flock_return_t flock_group_view_from_string(
         struct json_object* provider_id = json_object_object_get(member, "provider_id");
         flock_group_view_add_member(view,
                 json_object_get_string(address),
-                (uint16_t)json_object_get_uint64(provider_id));
+                (uint16_t)json_object_get_int64(provider_id));
     }
     json_object_object_foreach(metadata, metadata_key, metadata_value) {
         flock_group_view_add_metadata(view, metadata_key,
