@@ -393,7 +393,7 @@ static flock_return_t centralized_create_group(
                 json_object_new_double(ping_interval_ms_min));
     }
     json_object_object_add(config, "ping_max_num_timeouts",
-        json_object_new_uint64(ping_max_num_timeouts));
+        json_object_new_int64((int64_t)ping_max_num_timeouts));
     json_object_object_add(config, "primary_address", json_object_new_string(primary_member->address));
     json_object_object_add(config, "primary_provider_id", json_object_new_int64(primary_member->provider_id));
 

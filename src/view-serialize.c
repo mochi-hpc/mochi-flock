@@ -65,7 +65,7 @@ flock_return_t flock_group_view_serialize(
         json_object_object_add(member,
                 "address", json_object_new_string(v->members.data[i].address));
         json_object_object_add(member,
-                "provider_id", json_object_new_uint64(v->members.data[i].provider_id));
+                "provider_id", json_object_new_int64((int64_t)v->members.data[i].provider_id));
         json_object_array_add(members, member);
     }
 
