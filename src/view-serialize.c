@@ -58,7 +58,7 @@ flock_return_t flock_group_view_serialize(
     if(!serializer) return FLOCK_ERR_INVALID_ARGS;
     // LCOV_EXCL_STOP
 
-    struct json_object* members = json_object_new_array_ext(v->members.size);
+    struct json_object* members = json_object_new_array();
     json_object_object_add(view, "members", members);
     for(size_t i=0; i < v->members.size; ++i) {
         struct json_object* member = json_object_new_object();

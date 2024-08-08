@@ -384,7 +384,7 @@ static flock_return_t centralized_create_group(
     json_object_object_add(config, "ping_timeout_ms",
         json_object_new_double(ping_timeout_ms_val));
     if(ping_interval_ms_min != ping_interval_ms_max) {
-        struct json_object* ping_interval_ms_pair = json_object_new_array_ext(2);
+        struct json_object* ping_interval_ms_pair = json_object_new_array();
         json_object_array_add(ping_interval_ms_pair, json_object_new_double(ping_interval_ms_min));
         json_object_array_add(ping_interval_ms_pair, json_object_new_double(ping_interval_ms_max));
         json_object_object_add(config, "ping_interval_ms", ping_interval_ms_pair);
