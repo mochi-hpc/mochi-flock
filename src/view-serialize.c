@@ -5,6 +5,7 @@
  */
 #include <stdlib.h>
 #include <stdio.h>
+#include <errno.h>
 #include <json-c/json.h>
 #include "flock/flock-common.h"
 #include "flock/flock-group-view.h"
@@ -23,6 +24,7 @@ static inline void file_serializer(void* uargs, const char* content, size_t size
     FILE* file = fopen(filename, "w");
     if(!file) {
         // LCOV_EXCL_START
+        margo_error(NULL, "[flock] Could not open %s: %s", filename, strerror(errno));
         data->ret = FLOCK_ERR_ALLOCATION;
         goto finish;
         // LCOV_EXCL_STOP
@@ -30,6 +32,7 @@ static inline void file_serializer(void* uargs, const char* content, size_t size
     size_t written = fwrite(content, 1, size, file);
     if(written != size) {
         // LCOV_EXCL_START
+        margo_error(NULL, "[flock] Could not write file %s: %s", filename, strerror(errno));
         data->ret = FLOCK_ERR_OTHER;
         goto finish;
         // LCOV_EXCL_STOP
@@ -38,6 +41,8 @@ static inline void file_serializer(void* uargs, const char* content, size_t size
     file = NULL;
     if(rename(filename, data->filename) != 0) {
         // LCOV_EXCL_START
+        margo_error(NULL, "[flock] Could not rename file %s into %s: %s",
+                    filename, data->filename, strerror(errno));
         data->ret = FLOCK_ERR_OTHER;
         goto finish;
         // LCOV_EXCL_STOP
