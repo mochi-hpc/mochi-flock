@@ -202,4 +202,4 @@ class FlockComponent : public bedrock::AbstractComponent {
     }
 };
 
-BEDROCK_REGISTER_COMPONENT_TYPE(module_a, FlockComponent)
+BEDROCK_REGISTER_COMPONENT_TYPE(flock, FlockComponent)
