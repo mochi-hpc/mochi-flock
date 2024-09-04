@@ -31,7 +31,13 @@ class FlockComponent : public bedrock::AbstractComponent {
             flock_return_t ret;
             auto mid = args.engine.get_margo_instance();
             auto provider_id = args.provider_id;
-            auto pool = args.dependencies.find("pool")->second[0]->getHandle<thallium::pool>();
+            auto pool_dep_it = args.dependencies.find("pool");
+            thallium::pool pool;
+            if(pool_dep_it != args.dependencies.end()) {
+                pool = pool_dep_it->second[0]->getHandle<thallium::pool>();
+            } else {
+                pool = args.engine.get_handler_pool();
+            }
 
             flock_group_view_t initial_view = FLOCK_GROUP_VIEW_INITIALIZER;
 
@@ -192,7 +198,7 @@ class FlockComponent : public bedrock::AbstractComponent {
         GetDependencies(const bedrock::ComponentArgs& args) {
         (void)args;
         std::vector<bedrock::Dependency> deps = {
-            { "pool", "pool", true, false, false }
+            { "pool", "pool", false, false, false }
         };
         return deps;
     }
