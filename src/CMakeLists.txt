@@ -13,7 +13,7 @@ set (backend-src-files
      centralized/centralized-backend.c)
 
 set (bedrock-module-src-files
-     bedrock-module.c)
+     bedrock-module.cpp)
 
 # load package helper for generating cmake CONFIG packages
 include (CMakePackageConfigHelpers)
