@@ -1,14 +1,14 @@
 {
-    "libraries": {
-        "flock": "libflock-bedrock-module.so"
-    },
+    "libraries": [
+        "libflock-bedrock-module.so"
+    ],
     "providers": [
         {
             "type": "flock",
             "name": "my_flock_provider",
             "provider_id": 42,
             "config": {
-                "bootstrap": "self",
+                "bootstrap": "mpi",
                 "group": {
                     "type": "static",
                     "config": {}
