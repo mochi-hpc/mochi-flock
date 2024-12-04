@@ -21,6 +21,9 @@ endif ()
 # FIXME: Any other dependencies should be added here
 
 include ("${CMAKE_CURRENT_LIST_DIR}/flock-targets.cmake")
-
-add_library (flock::server ALIAS flock-server)
-add_library (flock::client ALIAS flock-client)
+if (NOT TARGET flock::server)
+  add_library (flock::server ALIAS flock-server)
+endif ()
+if (NOT TARGET flock::client)
+  add_library (flock::client ALIAS flock-client)
+endif ()
