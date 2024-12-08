@@ -73,7 +73,7 @@ class FlockComponent : public bedrock::AbstractComponent {
             }
             json_object_get(bootstrap);
         } else {
-            auto tmp = json_object_new_array_ext(1);
+            auto tmp = json_object_new_array();
             json_object_array_add(tmp,
                     json_object_new_string(json_object_get_string(bootstrap)));
             bootstrap = tmp;
