@@ -59,7 +59,7 @@ jobs:
     - name: Push packages to buildcache and update index
       if: ${{ !cancelled() }}
       run: |
-        export GUTHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+        export GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
         spack -e tests mirror set --autopush --push \
         --oci-username ${{ github.actor }} \
         --oci-password-variable GITHUB_TOKEN mochi-buildcache
