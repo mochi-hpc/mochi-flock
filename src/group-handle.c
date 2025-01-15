@@ -21,11 +21,24 @@ flock_return_t flock_group_handle_create(
 
     hg_return_t hret;
 
-    char buffer[sizeof("flock")];
-    size_t bufsize = sizeof("flock");
+    char buffer[128];
+    memset(buffer, 0, 128);
+    size_t bufsize = 128;
     hret = margo_provider_get_identity(client->mid, addr, provider_id, buffer, &bufsize);
-    if(hret != HG_SUCCESS || strcmp("flock", buffer) != 0)
+    if(hret != HG_SUCCESS) {
+        margo_error(client->mid,
+            "[flock] Could not create group handle, "
+            "margo_provider_get_identity failed: %s",
+            HG_Error_to_string(hret));
         return FLOCK_ERR_INVALID_PROVIDER;
+    }
+    if(strcmp("flock", buffer) != 0) {
+        margo_error(client->mid,
+            "[flock] Could not create group handle, "
+            "provider %hu is not a flock provider, but a %s provider",
+            provider_id, buffer);
+        return FLOCK_ERR_INVALID_PROVIDER;
+    }
 
     flock_group_handle_t rh =
         (flock_group_handle_t)calloc(1, sizeof(*rh));
@@ -34,6 +47,10 @@ flock_return_t flock_group_handle_create(
 
     hret = margo_addr_dup(client->mid, addr, &(rh->addr));
     if(hret != HG_SUCCESS) {
+        margo_error(client->mid,
+            "[flock] Could not create group handle, "
+            "margo_addr_dup failed: %s",
+            HG_Error_to_string(hret));
         free(rh);
         return FLOCK_ERR_FROM_MERCURY;
     }
@@ -55,6 +72,10 @@ flock_return_t flock_group_handle_create(
         hg_size_t address_size = 256;
         hret = margo_addr_to_string(client->mid, address, &address_size, addr);
         if(hret != HG_SUCCESS) {
+            margo_error(client->mid,
+                "[flock] Could not create group handle, "
+                "margo_addr_to_string failed: %s",
+                HG_Error_to_string(hret));
             flock_group_handle_release(rh);
             return FLOCK_ERR_FROM_MERCURY;
         }

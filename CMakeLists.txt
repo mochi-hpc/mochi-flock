@@ -1,6 +1,6 @@
 # (C) 2024 The University of Chicago
 # See COPYRIGHT in top-level directory.
-cmake_minimum_required (VERSION 3.8)
+cmake_minimum_required (VERSION 3.10)
 project (flock C CXX)
 set (CMAKE_CXX_STANDARD 17)
 set (CMAKE_CXX_STANDARD_REQUIRED ON)
