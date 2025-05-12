@@ -9,7 +9,7 @@ foreach (test-source ${test-sources})
     target_link_libraries (${name}
         Catch2::Catch2WithMain flock::server flock::client coverage_config)
     if (name MATCHES "^test-mpi.*$")
-        add_test (NAME ${name} COMMAND "${MPIEXEC_EXECUTABLE}" ${MPIEXEC_NUMPROC_FLAG} 5 ./${name})
+        add_test (NAME ${name} COMMAND "${MPIEXEC_EXECUTABLE}" --map-by :OVERSUBSCRIBE ${MPIEXEC_NUMPROC_FLAG} 5 ./${name})
         target_link_libraries (${name} MPI::MPI_C)
     else ()
         add_test (NAME ${name} COMMAND ./${name})

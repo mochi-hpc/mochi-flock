@@ -54,7 +54,7 @@ TEST_CASE("Test group handle for swim group", "[swim]") {
     auto config = ss.str();
     auto group = std::make_unique<TestGroup>(context->mid, 5, config.c_str());
 
-    margo_thread_sleep(context->mid, 10000);
+    margo_thread_sleep(context->mid, 5000);
 
 #if 0
     SECTION("Test provider functionalities") {

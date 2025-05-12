@@ -303,7 +303,7 @@ static void flock_finalize_provider(void* p)
     free(provider->self_addr_str);
     margo_instance_id mid = provider->mid;
     free(provider);
-    margo_trace(mid, "[flock] Provider successfuly finalized");
+    margo_trace(mid, "[flock] Provider successfully finalized");
 }
 
 flock_return_t flock_provider_destroy(
@@ -315,7 +315,7 @@ flock_return_t flock_provider_destroy(
     margo_provider_pop_finalize_callback(provider->mid, provider);
     /* call the callback */
     flock_finalize_provider(provider);
-    margo_info(mid, "[flock] Provider successfuly destroyed");
+    margo_info(mid, "[flock] Provider successfully destroyed");
     return FLOCK_SUCCESS;
 }
 
