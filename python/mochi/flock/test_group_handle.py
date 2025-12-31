@@ -3,12 +3,12 @@ import json
 import mochi.flock.client as mfc
 import mochi.flock.server as mfs
 from mochi.flock.view import GroupView
-import pymargo.core
+import mochi.margo
 
 class TestClient(unittest.TestCase):
 
     def setUp(self):
-        self.engine = pymargo.core.Engine("na+sm", pymargo.core.server)
+        self.engine = mochi.margo.Engine("na+sm", mochi.margo.server)
         self.address = str(self.engine.address)
         config = {
             "group": {

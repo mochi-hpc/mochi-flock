@@ -1,6 +1,6 @@
 import unittest
 import mochi.flock.client as mfc
-from pymargo.core import Engine
+from mochi.margo import Engine
 
 
 class TestClient(unittest.TestCase):

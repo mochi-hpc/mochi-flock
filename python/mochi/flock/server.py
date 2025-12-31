@@ -15,12 +15,10 @@
 import pyflock_common
 from .view import GroupView
 import pyflock_server
-import pymargo.core
-import pymargo
+import mochi.margo
 
 
 class Provider:
 
-    def __init__(self, engine: pymargo.core.Engine, provider_id: int, config: str, initial_view: GroupView):
-        self._internal = pyflock_server.Provider(
-            engine.get_internal_mid(), provider_id, config, initial_view)
+    def __init__(self, engine: mochi.margo.Engine, provider_id: int, config: str, initial_view: GroupView):
+        self._internal = pyflock_server.Provider(engine.mid, provider_id, config, initial_view)

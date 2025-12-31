@@ -14,8 +14,7 @@
 
 import pyflock_common
 import pyflock_client
-import pymargo.core
-import pymargo
+import mochi.margo
 
 
 class GroupHandle:
@@ -39,11 +38,11 @@ class GroupHandle:
 class Client:
 
     def __init__(self, arg):
-        if isinstance(arg, pymargo.core.Engine):
+        if isinstance(arg, mochi.margo.Engine):
             self._engine = arg
             self._owns_engine = False
         elif isinstance(arg, str):
-            self._engine = pymargo.core.Engine(arg, pymargo.client)
+            self._engine = mochi.margo.Engine(arg, mochi.margo.client)
             self._owns_engine = True
         else:
             raise TypeError(f'Invalid argument type {type(arg)}')
@@ -63,8 +62,8 @@ class Client:
     def engine(self):
         return self._engine
 
-    def make_group_handle(self, address: str|pymargo.core.Address, provider_id: int = 0):
-        if isinstance(address, pymargo.core.Address):
+    def make_group_handle(self, address: str|mochi.margo.Address, provider_id: int = 0):
+        if isinstance(address, mochi.margo.Address):
             address = str(address)
         return GroupHandle(
             self._internal.make_group_handle(address=address, provider_id=provider_id),
