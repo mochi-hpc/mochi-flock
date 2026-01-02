@@ -68,6 +68,18 @@ class Client {
         return GroupHandle(gh, false);
     }
 
+    GroupHandle makeGroupHandle(
+        const std::string& addr_str,
+        uint16_t provider_id,
+        uint32_t mode = 0) const {
+        flock_group_handle_t gh;
+        auto endpoint = m_engine.lookup(addr_str);
+        auto err = flock_group_handle_create(
+            m_client, endpoint.get_addr(), provider_id, mode, &gh);
+        FLOCK_CONVERT_AND_THROW(err);
+        return GroupHandle(gh, false);
+    }
+
     auto handle() const {
         return m_client;
     }
