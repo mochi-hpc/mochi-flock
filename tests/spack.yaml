@@ -27,7 +27,7 @@ spack:
       padded_length: 128
   packages:
     py-mochi-margo:
-      require: "@0.6.0:"
+      require: "@0.6.1:"
     mochi-margo:
       require: "@0.16.0:"
     mochi-bedrock-module-api:
