@@ -123,8 +123,7 @@ install (FILES "${CMAKE_CURRENT_BINARY_DIR}/flock-config.cmake"
                "${CMAKE_CURRENT_BINARY_DIR}/flock-config-version.cmake"
          DESTINATION ${flock-pkg} )
 install (DIRECTORY ../include/flock
-         DESTINATION include
-         FILES_MATCHING PATTERN "*.h")
+         DESTINATION include)
 install (FILES "${CMAKE_CURRENT_BINARY_DIR}/flock-server.pc"
                "${CMAKE_CURRENT_BINARY_DIR}/flock-client.pc"
          DESTINATION "lib/pkgconfig/")
