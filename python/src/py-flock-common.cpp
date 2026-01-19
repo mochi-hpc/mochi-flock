@@ -5,6 +5,7 @@
  */
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <flock/flock-group-view.h>
 #include <flock/cxx/exception.hpp>
 #include <flock/cxx/group-view.hpp>
 
@@ -17,6 +18,52 @@ typedef py11::capsule pymargo_instance_id;
 
 #define MID2CAPSULE(__mid)   py11::capsule((void*)(__mid), "margo_instance_id")
 #define CAPSULE2MID(__caps)  (margo_instance_id)(__caps)
+
+// Iterator helper for MembersProxy
+struct MembersIterator {
+    flock::GroupView::MembersProxy* proxy;
+    size_t index;
+
+    bool operator==(const MembersIterator& other) const {
+        return index == other.index;
+    }
+
+    bool operator!=(const MembersIterator& other) const {
+        return index != other.index;
+    }
+
+    MembersIterator& operator++() {
+        ++index;
+        return *this;
+    }
+
+    flock::GroupView::Member operator*() const {
+        return (*proxy)[index];
+    }
+};
+
+// Iterator helper for MetadataProxy
+struct MetadataIterator {
+    flock::GroupView::MetadataProxy* proxy;
+    size_t index;
+
+    bool operator==(const MetadataIterator& other) const {
+        return index == other.index;
+    }
+
+    bool operator!=(const MetadataIterator& other) const {
+        return index != other.index;
+    }
+
+    MetadataIterator& operator++() {
+        ++index;
+        return *this;
+    }
+
+    flock::GroupView::Metadata operator*() const {
+        return (*proxy)[index];
+    }
+};
 
 PYBIND11_MODULE(pyflock_common, m) {
     m.doc() = "Flock common python extension";
@@ -50,6 +97,20 @@ PYBIND11_MODULE(pyflock_common, m) {
         .def("__delitem__", [](flock::GroupView::MembersProxy& proxy, size_t i) {
             proxy.remove(i);
         }, "index"_a)
+        .def("__iter__", [](flock::GroupView::MembersProxy& proxy) {
+            return py11::make_iterator(
+                MembersIterator{&proxy, 0},
+                MembersIterator{&proxy, proxy.count()}
+            );
+        }, py11::keep_alive<0, 1>())
+        .def("__contains__", [](flock::GroupView::MembersProxy& proxy, const py11::tuple& member) {
+            if (py11::len(member) != 2) {
+                throw std::invalid_argument("Expected tuple of (address, provider_id)");
+            }
+            std::string address = member[0].cast<std::string>();
+            uint16_t provider_id = member[1].cast<uint16_t>();
+            return proxy.exists(address.c_str(), provider_id);
+        })
         ;
 
     py11::class_<flock::GroupView::MetadataProxy, std::shared_ptr<flock::GroupView::MetadataProxy>>(
@@ -68,6 +129,15 @@ PYBIND11_MODULE(pyflock_common, m) {
         }, "index"_a)
         .def("__delitem__", &flock::GroupView::MetadataProxy::remove,
            "key"_a)
+        .def("__iter__", [](flock::GroupView::MetadataProxy& proxy) {
+            return py11::make_iterator(
+                MetadataIterator{&proxy, 0},
+                MetadataIterator{&proxy, proxy.count()}
+            );
+        }, py11::keep_alive<0, 1>())
+        .def("__contains__", [](flock::GroupView::MetadataProxy& proxy, const std::string& key) {
+            return proxy[key.c_str()] != nullptr;
+        })
         ;
 
     py11::class_<flock::GroupView, std::shared_ptr<flock::GroupView>>(m, "GroupView")
@@ -82,5 +152,36 @@ PYBIND11_MODULE(pyflock_common, m) {
                 return static_cast<std::string>(gv);
         })
         .def("copy", &flock::GroupView::copy)
+        .def("serialize_to_file", [](const flock::GroupView& gv, const std::string& filename) {
+            // Serialize to string first, then write to file
+            std::string content = static_cast<std::string>(gv);
+            // Use the C function which handles atomic write
+            flock_group_view_t temp_view = FLOCK_GROUP_VIEW_INITIALIZER;
+            auto ret = flock_group_view_from_string(content.c_str(), content.size(), &temp_view);
+            if (ret != FLOCK_SUCCESS) {
+                throw flock::Exception{ret};
+            }
+            ret = flock_group_view_serialize_to_file(&temp_view, filename.c_str());
+            flock_group_view_clear(&temp_view);
+            if (ret != FLOCK_SUCCESS) {
+                throw flock::Exception{ret};
+            }
+        }, "filename"_a, "Serialize the group view to a file")
+        .def_static("from_file", [](const std::string& filename) {
+            flock_group_view_t view = FLOCK_GROUP_VIEW_INITIALIZER;
+            auto ret = flock_group_view_from_file(filename.c_str(), &view);
+            if (ret != FLOCK_SUCCESS) {
+                throw flock::Exception{ret};
+            }
+            return flock::GroupView{view};
+        }, "filename"_a, "Load a group view from a file")
+        .def_static("from_string", [](const std::string& content) {
+            flock_group_view_t view = FLOCK_GROUP_VIEW_INITIALIZER;
+            auto ret = flock_group_view_from_string(content.c_str(), content.size(), &view);
+            if (ret != FLOCK_SUCCESS) {
+                throw flock::Exception{ret};
+            }
+            return flock::GroupView{view};
+        }, "content"_a, "Load a group view from a serialized string")
         ;
 }
