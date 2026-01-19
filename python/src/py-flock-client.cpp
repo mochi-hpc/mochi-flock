@@ -23,7 +23,7 @@ PYBIND11_MODULE(pyflock_client, m) {
     m.doc() = "Flock client python extension";
     py11::module_::import("pyflock_common");
 
-    py11::class_<flock::Client>(m, "Client")
+    py11::class_<flock::Client, std::shared_ptr<flock::Client>>(m, "Client")
         .def(py11::init<pymargo_instance_id>())
         .def_property_readonly("margo_instance_id",
             [](const flock::Client& client) {
@@ -54,7 +54,7 @@ PYBIND11_MODULE(pyflock_client, m) {
              "Create a GroupHandle instance",
              "serialized"_a)
     ;
-    py11::class_<flock::GroupHandle>(m, "GroupHandle")
+    py11::class_<flock::GroupHandle, std::shared_ptr<flock::GroupHandle>>(m, "GroupHandle")
         .def("update", &flock::GroupHandle::update)
         .def_property_readonly("view", &flock::GroupHandle::view)
     ;

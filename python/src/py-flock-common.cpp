@@ -23,6 +23,7 @@ PYBIND11_MODULE(pyflock_common, m) {
     py11::register_exception<flock::Exception>(m, "Exception", PyExc_RuntimeError);
 
     py11::class_<flock::GroupView::Member>(m, "Member")
+        .def(py11::init<const std::string&, uint16_t>())
         .def_readonly("provider_id", &flock::GroupView::Member::provider_id)
         .def_readonly("address", &flock::GroupView::Member::address);
 
@@ -30,7 +31,8 @@ PYBIND11_MODULE(pyflock_common, m) {
         .def_readonly("key", &flock::GroupView::Metadata::key)
         .def_readonly("value", &flock::GroupView::Metadata::value);
 
-    py11::class_<flock::GroupView::MembersProxy>(m, "MembersProxy")
+    py11::class_<flock::GroupView::MembersProxy, std::shared_ptr<flock::GroupView::MembersProxy>>(
+            m, "MembersProxy")
         .def("__len__", &flock::GroupView::MembersProxy::count)
         .def_property_readonly("count", &flock::GroupView::MembersProxy::count)
         .def("add", &flock::GroupView::MembersProxy::add,
@@ -50,7 +52,8 @@ PYBIND11_MODULE(pyflock_common, m) {
         }, "index"_a)
         ;
 
-    py11::class_<flock::GroupView::MetadataProxy>(m, "MetadataProxy")
+    py11::class_<flock::GroupView::MetadataProxy, std::shared_ptr<flock::GroupView::MetadataProxy>>(
+            m, "MetadataProxy")
         .def("__len__", &flock::GroupView::MetadataProxy::count)
         .def_property_readonly("count", &flock::GroupView::MetadataProxy::count)
         .def("add", &flock::GroupView::MetadataProxy::add,
@@ -67,14 +70,14 @@ PYBIND11_MODULE(pyflock_common, m) {
            "key"_a)
         ;
 
-    py11::class_<flock::GroupView>(m, "GroupView")
+    py11::class_<flock::GroupView, std::shared_ptr<flock::GroupView>>(m, "GroupView")
         .def(py11::init<>())
         .def_property_readonly("digest", &flock::GroupView::digest)
         .def("clear", &flock::GroupView::clear)
         .def("lock", &flock::GroupView::lock)
         .def("unlock", &flock::GroupView::unlock)
-        .def_property_readonly("members", &flock::GroupView::members, py11::keep_alive<0, 1>())
-        .def_property_readonly("metadata", &flock::GroupView::metadata, py11::keep_alive<0, 1>())
+        .def("_members", &flock::GroupView::members, py11::keep_alive<0, 1>())
+        .def("_metadata", &flock::GroupView::metadata, py11::keep_alive<0, 1>())
         .def("__str__", [](const flock::GroupView& gv) {
                 return static_cast<std::string>(gv);
         })
