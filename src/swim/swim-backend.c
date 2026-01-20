@@ -70,6 +70,7 @@ typedef struct swim_context {
     size_t        probe_index;
     margo_timer_t protocol_timer;
     _Atomic bool  shutting_down;
+    bool          skip_leave_on_destroy;  /* For testing: simulate crash without leave announcement */
 
     /* Gossip buffer */
     swim_gossip_buffer_t* gossip_buffer;
@@ -1153,8 +1154,8 @@ static flock_return_t swim_destroy_group(void* ctx_ptr) {
 
     atomic_store(&ctx->shutting_down, true);
 
-    /* Announce leave to other members */
-    if(ctx->view.members.size > 1) {
+    /* Announce leave to other members (unless crash mode is enabled) */
+    if(!ctx->skip_leave_on_destroy && ctx->view.members.size > 1) {
         swim_gossip_buffer_add(ctx->gossip_buffer, SWIM_GOSSIP_LEAVE,
                                ctx->self_address, ctx->provider_id, ctx->self_incarnation);
         swim_announce_to_random_members(ctx, SWIM_GOSSIP_LEAVE);
@@ -1236,4 +1237,14 @@ static flock_backend_impl swim_backend = {
 
 flock_return_t flock_register_swim_backend(void) {
     return flock_register_backend(&swim_backend);
+}
+
+flock_return_t flock_swim_set_crash_mode(flock_provider_t provider, bool crash) {
+    if(!provider) return FLOCK_ERR_INVALID_ARGS;
+    if(!provider->group) return FLOCK_ERR_INVALID_ARGS;
+    if(provider->group->fn != &swim_backend) return FLOCK_ERR_INVALID_BACKEND;
+
+    swim_context* ctx = (swim_context*)provider->group->ctx;
+    ctx->skip_leave_on_destroy = crash;
+    return FLOCK_SUCCESS;
 }

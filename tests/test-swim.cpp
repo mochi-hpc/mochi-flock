@@ -10,6 +10,7 @@
 #include <flock/flock-server.h>
 #include <flock/flock-client.h>
 #include <flock/flock-group.h>
+#include "../src/swim/swim-backend.h"
 #include "helper.hpp"
 #include <unordered_map>
 #include <atomic>
@@ -164,11 +165,17 @@ TEST_CASE("Test SWIM failure detection", "[swim]") {
         REQUIRE(flock_group_view_member_count(&view) == 5);
         flock_group_view_clear(&view);
 
-        // Kill one provider (the last one)
+        // Simulate crash: enable crash mode so no LEAVE announcement is sent
+        // This forces failure detection via failed pings and suspicion timeout
+        ret = flock_swim_set_crash_mode(group->providers.back(), true);
+        REQUIRE(ret == FLOCK_SUCCESS);
+
+        // Kill one provider (the last one) - no leave announcement will be sent
         flock_provider_destroy(group->providers.back());
         group->providers.pop_back();
 
         // Wait for failure detection (suspicion timeout + some protocol periods)
+        // This must go through the full suspicion timeout since there's no LEAVE
         margo_thread_sleep(context->mid, 5000);
 
         // Update view
@@ -231,12 +238,14 @@ TEST_CASE("Test SWIM graceful leave", "[swim]") {
         REQUIRE(flock_group_view_member_count(&view) == 4);
         flock_group_view_clear(&view);
 
-        // Gracefully destroy one provider
+        // Gracefully destroy one provider - sends LEAVE announcement
+        // (crash mode is NOT enabled, so this is a graceful leave)
         flock_provider_destroy(group->providers.back());
         group->providers.pop_back();
 
-        // Wait for the leave to propagate
-        margo_thread_sleep(context->mid, 2000);
+        // Wait for the leave to propagate - should be quick since LEAVE is announced directly
+        // Much shorter than failure detection which requires suspicion timeout
+        margo_thread_sleep(context->mid, 1000);
 
         // Update and check view
         ret = flock_group_update_view(rh, NULL);
