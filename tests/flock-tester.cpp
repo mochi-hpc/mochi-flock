@@ -20,6 +20,7 @@
  *     kill <N>    - Kill process N without cleanup (simulates crash)
  *     view        - Update and display current group view
  *     list        - List all worker processes and their status
+ *     sleep <N>   - Sleep for N seconds (useful for scripting)
  *     exit        - Kill all processes and exit
  *
  * Configuration file format (JSON):
@@ -89,6 +90,7 @@ private:
     void cmdKill(const std::vector<std::string>& args);
     void cmdView(const std::vector<std::string>& args);
     void cmdList(const std::vector<std::string>& args);
+    void cmdSleep(const std::vector<std::string>& args);
     void cmdExit(const std::vector<std::string>& args);
 
     std::string findWorkerPath();
@@ -242,6 +244,7 @@ Commands:
   kill <N>    - Kill process N without cleanup (simulates crash)
   view        - Update and display current group view
   list        - List all worker processes and their status
+  sleep <N>   - Sleep for N seconds (useful for scripting)
   exit        - Kill all processes and exit
 
 Actions:
@@ -478,7 +481,7 @@ void FlockTester::cmdView(const std::vector<std::string>& args) {
 
     for (size_t i = 0; i < member_count; i++) {
         flock_member_t* member = flock_group_view_member_at(&view, i);
-        std::cout << "  [" << i << "] " << member->address
+        std::cout << " - " << member->address
                   << " (provider_id=" << member->provider_id << ")" << std::endl;
     }
 
@@ -522,6 +525,23 @@ void FlockTester::cmdList(const std::vector<std::string>& args) {
                   << " - " << status_str << std::endl;
     }
     std::cout << std::endl;
+}
+
+void FlockTester::cmdSleep(const std::vector<std::string>& args) {
+    if (args.empty()) {
+        std::cerr << "Usage: sleep <N>" << std::endl;
+        return;
+    }
+
+    int seconds;
+    try {
+        seconds = std::stoi(args[0]);
+    } catch (...) {
+        std::cerr << "Error: Invalid number of seconds: " << args[0] << std::endl;
+        return;
+    }
+
+    sleep(seconds);
 }
 
 void FlockTester::cmdExit(const std::vector<std::string>& args) {
@@ -578,6 +598,8 @@ void FlockTester::run() {
             cmdView(args);
         } else if (cmd == "list") {
             cmdList(args);
+        } else if (cmd == "sleep") {
+            cmdSleep(args);
         } else if (cmd == "exit" || cmd == "quit") {
             cmdExit(args);
         } else {
