@@ -28,3 +28,5 @@ This section will walk you through a series of tutorials on how to use Flock.
    flock/11_bedrock.rst
    flock/12_cpp.rst
    flock/13_python.rst
+   flock/c_api.rst
+   flock/cpp_api.rst
