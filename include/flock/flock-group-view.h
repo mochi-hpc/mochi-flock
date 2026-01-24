@@ -637,6 +637,52 @@ static inline size_t flock_group_view_metadata_count(flock_group_view_t* view)
 }
 
 /**
+ * @brief Copy the content of a source view into an empty destination view.
+ *
+ * This function creates a deep copy of all members and metadata from the
+ * source view into the destination view. The extra fields associated with
+ * members are not copied (they are backend-specific and not serialized).
+ *
+ * @warning This function assumes that the destination view is empty.
+ * If it is not, it may cause memory leaks.
+ *
+ * @param src Source view to copy from.
+ * @param dst Destination view to copy into (must be empty).
+ *
+ * @return true if the copy succeeded, false on allocation failure.
+ */
+static inline bool flock_group_view_copy(
+    const flock_group_view_t* src,
+    flock_group_view_t* dst)
+{
+    // Copy all members
+    for (size_t i = 0; i < src->members.size; ++i) {
+        flock_member_t* member = flock_group_view_add_member(
+            dst,
+            src->members.data[i].address,
+            src->members.data[i].provider_id);
+        if (!member) {
+            flock_group_view_clear(dst);
+            return false;
+        }
+    }
+
+    // Copy all metadata
+    for (size_t i = 0; i < src->metadata.size; ++i) {
+        flock_metadata_t* meta = flock_group_view_add_metadata(
+            dst,
+            src->metadata.data[i].key,
+            src->metadata.data[i].value);
+        if (!meta) {
+            flock_group_view_clear(dst);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/**
  * @brief Serialize a flock_group_view_t and pass the serialized string
  * to a serializer function pointer.
  *

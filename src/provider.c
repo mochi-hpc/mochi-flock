@@ -10,6 +10,7 @@
 /* backends that we want to add at compile time */
 #include "static/static-backend.h"
 #include "centralized/centralized-backend.h"
+#include "swim/swim-backend.h"
 /* Note: other backends can be added dynamically using
  * flock_register_backend */
 
@@ -94,8 +95,7 @@ flock_return_t flock_provider_register(
     /* add backends available at compiler time (e.g. default/static backends) */
     flock_register_static_backend(); // function from "static/static-backend.h"
     flock_register_centralized_backend(); // function from "centralized/centralized-backend.h"
-    /* FIXME: add other backend registrations here */
-    /* ... */
+    flock_register_swim_backend(); // function from "swim/swim-backend.h"
 
     /* check if the margo instance is listening */
     flag = margo_is_listening(mid);
