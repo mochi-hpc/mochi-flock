@@ -95,6 +95,8 @@ if (${ENABLE_TESTS})
     endif ()
     add_subdirectory (tests)
 endif (${ENABLE_TESTS})
+
 if (${ENABLE_EXAMPLES})
     add_subdirectory (examples)
+    add_subdirectory (docs/examples/flock)
 endif (${ENABLE_EXAMPLES})
