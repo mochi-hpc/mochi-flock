@@ -77,7 +77,7 @@ set_target_properties (flock-bedrock-module
 endif ()
 
 add_library (flock-cxx-headers INTERFACE)
-add_library (flock::headers ALIAS flock-cxx-headers)
+add_library (flock::cxx-headers ALIAS flock-cxx-headers)
 target_link_libraries (flock-cxx-headers
     INTERFACE PkgConfig::margo thallium flock-client flock-server)
 target_include_directories (flock-cxx-headers INTERFACE $<INSTALL_INTERFACE:include>)
