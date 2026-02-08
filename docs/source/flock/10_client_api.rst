@@ -25,7 +25,7 @@ Basic client usage
 
 Here's a complete example of using the Flock client API:
 
-.. literalinclude:: ../../examples/flock/09_client_api/client.c
+.. literalinclude:: ../../examples/flock/10_client_api/client.c
    :language: c
 
 Client initialization

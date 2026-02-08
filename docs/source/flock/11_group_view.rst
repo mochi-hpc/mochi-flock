@@ -24,7 +24,7 @@ Example: Working with a group view
 
 Here's a complete example showing how to retrieve and work with a group view:
 
-.. literalinclude:: ../../examples/flock/10_group_view/client.c
+.. literalinclude:: ../../examples/flock/11_group_view/client.c
    :language: c
 
 Initialization

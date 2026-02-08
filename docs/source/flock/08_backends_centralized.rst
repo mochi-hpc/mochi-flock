@@ -36,7 +36,7 @@ Configuration
 
 In Bedrock configuration:
 
-.. literalinclude:: ../../examples/flock/11_bedrock/bedrock-config-centralized.json
+.. literalinclude:: ../../examples/flock/12_bedrock/bedrock-config-centralized.json
    :language: json
 
 Configuration options:

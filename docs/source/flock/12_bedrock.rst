@@ -21,10 +21,15 @@ Basic configuration
 
 A minimal Bedrock configuration for Flock with the static backend:
 
-.. literalinclude:: ../../examples/flock/11_bedrock/bedrock-config-static.json
+.. literalinclude:: ../../examples/flock/12_bedrock/bedrock-config-static.json
    :language: json
 
 Configuration with the centralized backend:
 
-.. literalinclude:: ../../examples/flock/11_bedrock/bedrock-config-centralized.json
+.. literalinclude:: ../../examples/flock/12_bedrock/bedrock-config-centralized.json
+   :language: json
+
+Configuration with the SWIM backend:
+
+.. literalinclude:: ../../examples/flock/12_bedrock/bedrock-config-swim.json
    :language: json

@@ -19,7 +19,7 @@ Quickstart Example
 
 Here's a simple example showing the basics of Flock in Python:
 
-.. literalinclude:: ../../examples/flock/13_python/quickstart.py
+.. literalinclude:: ../../examples/flock/14_python/quickstart.py
    :language: python
 
 Key Points
@@ -92,7 +92,7 @@ Backend Configurations
 
 Different backends suit different use cases:
 
-.. literalinclude:: ../../examples/flock/13_python/server_backends.py
+.. literalinclude:: ../../examples/flock/14_python/server_backends.py
    :language: python
 
 **Static Backend:**
@@ -168,7 +168,7 @@ Working with GroupView
 
 GroupView represents group membership and metadata:
 
-.. literalinclude:: ../../examples/flock/13_python/group_view_ops.py
+.. literalinclude:: ../../examples/flock/14_python/group_view_ops.py
    :language: python
 
 File Operations and Serialization
@@ -176,7 +176,7 @@ File Operations and Serialization
 
 Flock supports file-based bootstrapping and serialization:
 
-.. literalinclude:: ../../examples/flock/13_python/file_operations.py
+.. literalinclude:: ../../examples/flock/14_python/file_operations.py
    :language: python
 
 **File-Based Configuration:**
@@ -207,7 +207,7 @@ Group Updates
 
 With centralized backend, you can update group membership:
 
-.. literalinclude:: ../../examples/flock/13_python/group_updates.py
+.. literalinclude:: ../../examples/flock/14_python/group_updates.py
    :language: python
 
 **Updating:**

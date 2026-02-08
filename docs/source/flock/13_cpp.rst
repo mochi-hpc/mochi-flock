@@ -43,7 +43,7 @@ Provider (server-side)
 
 Here's a complete example of creating a Flock provider:
 
-.. literalinclude:: ../../examples/flock/12_cpp/server.cpp
+.. literalinclude:: ../../examples/flock/13_cpp/server.cpp
    :language: cpp
 
 The :code:`Provider` class uses RAII - it registers on construction and
@@ -54,7 +54,7 @@ Client
 
 Here's a complete example of using the Flock client:
 
-.. literalinclude:: ../../examples/flock/12_cpp/client.cpp
+.. literalinclude:: ../../examples/flock/13_cpp/client.cpp
    :language: cpp
 
 The client is automatically finalized when the :code:`Client` object is destroyed.

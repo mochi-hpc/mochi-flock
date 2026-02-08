@@ -23,10 +23,11 @@ This section will walk you through a series of tutorials on how to use Flock.
    flock/06_bootstrap_file.rst
    flock/07_backends_static.rst
    flock/08_backends_centralized.rst
-   flock/09_client_api.rst
-   flock/10_group_view.rst
-   flock/11_bedrock.rst
-   flock/12_cpp.rst
-   flock/13_python.rst
+   flock/09_backends_swim.rst
+   flock/10_client_api.rst
+   flock/11_group_view.rst
+   flock/12_bedrock.rst
+   flock/13_cpp.rst
+   flock/14_python.rst
    flock/c_api.rst
    flock/cpp_api.rst

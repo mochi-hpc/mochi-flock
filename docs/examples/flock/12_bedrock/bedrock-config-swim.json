@@ -1,0 +1,26 @@
+{
+    "libraries": [
+        "libflock-bedrock-module.so"
+    ],
+    "providers": [
+        {
+            "type": "flock",
+            "name": "my_flock_provider",
+            "provider_id": 42,
+            "config": {
+                "bootstrap": "self",
+                "group": {
+                    "type": "swim",
+                    "config": {
+                        "protocol_period_ms": 1000,
+                        "ping_timeout_ms": 200,
+                        "ping_req_timeout_ms": 500,
+                        "ping_req_members": 3,
+                        "suspicion_timeout_ms": 5000
+                    }
+                },
+                "file": "mygroup.flock"
+            }
+        }
+    ]
+}
