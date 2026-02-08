@@ -16,6 +16,19 @@ foreach (test-source ${test-sources})
     endif ()
 endforeach ()
 
+# Interactive tester tools (not automated tests)
+add_executable (flock-worker ${CMAKE_CURRENT_SOURCE_DIR}/flock-worker.cpp)
+target_include_directories (flock-worker PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_BINARY_DIR}/../src)
+target_link_libraries (flock-worker flock::server flock::client)
+
+add_executable (flock-tester ${CMAKE_CURRENT_SOURCE_DIR}/flock-tester.cpp)
+target_include_directories (flock-tester PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_BINARY_DIR}/../src)
+target_link_libraries (flock-tester flock::client PkgConfig::json-c)
+
 if (ENABLE_PYTHON)
     # Set the path to the python directory
     set (PYTHON_MODULE_DIR ${CMAKE_SOURCE_DIR}/python)
