@@ -54,7 +54,8 @@ typedef struct centralized_context {
  * @brief Extra data attached to each member in the view in the primary member.
  */
 typedef struct member_state {
-    flock_member_t*      owner;
+    char*                address_str;
+    uint16_t             provider_id;
     centralized_context* context;
     hg_addr_t            address;
     margo_timer_t        ping_timer;
@@ -81,6 +82,7 @@ static inline void member_state_free(void* args)
     }
     margo_addr_free(state->context->mid, state->address);
     ABT_mutex_unlock(ABT_MUTEX_MEMORY_GET_HANDLE(&state->mtx));
+    free(state->address_str);
     free(state);
 }
 
@@ -474,7 +476,8 @@ static flock_return_t centralized_create_group(
             member->extra.free  = member_state_free;
             member_state* state = (member_state*)(member->extra.data);
             state->context      = ctx;
-            state->owner        = member;
+            state->address_str  = strdup(member->address);
+            state->provider_id  = member->provider_id;
             if(HG_SUCCESS != margo_addr_lookup(mid, member->address, &state->address)) {
                 ret = FLOCK_ERR_FROM_MERCURY;
                 goto error;
@@ -534,7 +537,7 @@ static void ping_timer_callback(void* args)
     margo_request req = MARGO_REQUEST_NULL;
     double timeout = state->context->ping_timeout_ms;
     hret = margo_provider_iforward_timed(
-            state->owner->provider_id,
+            state->provider_id,
             state->last_ping_handle,
             &state->context->view.digest,
             timeout, &req);
@@ -564,8 +567,8 @@ static void ping_timer_callback(void* args)
 
     centralized_context* context = state->context;
     if(state->num_ping_timeouts == context->ping_max_num_timeouts) {
-        char* address        = strdup(state->owner->address);
-        uint16_t provider_id = state->owner->provider_id;
+        char* address        = strdup(state->address_str);
+        uint16_t provider_id = state->provider_id;
         margo_trace(context->mid,
             "[flock] Ping to member (%s, %d) timed out %d times, "
             "considering the member dead.", address, provider_id, context->ping_max_num_timeouts);
@@ -808,7 +811,8 @@ static void join_rpc_ult(hg_handle_t h)
     member->extra.free  = member_state_free;
     member_state* state = (member_state*)(member->extra.data);
     state->context      = ctx;
-    state->owner        = member;
+    state->address_str  = strdup(address);
+    state->provider_id  = provider_id;
     margo_addr_dup(mid, info->addr, &state->address);
 
     // create timer for the joining member
@@ -921,12 +925,12 @@ static flock_return_t broadcast_membership_update(
 
     for(size_t i = 0; i < rpc_count; ++i) {
         member_state* state = (member_state*)ctx->view.members.data[i+1].extra.data;
-        if(state->owner->provider_id == provider_id && strcmp(state->owner->address, address) == 0) continue; // don't sent to the process concerned with the update
+        if(state->provider_id == provider_id && strcmp(state->address_str, address) == 0) continue; // don't sent to the process concerned with the update
         hret = margo_create(ctx->mid, state->address, ctx->membership_update_rpc_id, &handles[i]);
         if(hret != HG_SUCCESS) {
             margo_error(ctx->mid,
                 "[flock] Could not create handle to issue membership update to member (%s, %u)",
-                state->owner->address, state->owner->provider_id);
+                state->address_str, state->provider_id);
         }
     }
 
@@ -934,11 +938,11 @@ static flock_return_t broadcast_membership_update(
         member_state* state = (member_state*)ctx->view.members.data[i+1].extra.data;
         if(!handles[i]) continue;
         hret = margo_provider_iforward_timed(
-            state->owner->provider_id, handles[i], &in, 1000.0, &requests[i]);
+            state->provider_id, handles[i], &in, 1000.0, &requests[i]);
         if(hret != HG_SUCCESS) {
             margo_error(ctx->mid,
                 "[flock] Could not forward membership update to member (%s, %u)",
-                state->owner->address, state->owner->provider_id);
+                state->address_str, state->provider_id);
         }
     }
     FLOCK_GROUP_VIEW_UNLOCK(&ctx->view);
