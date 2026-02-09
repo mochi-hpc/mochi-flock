@@ -5,6 +5,7 @@
  */
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11/eval.h>
 #include <flock/flock-group-view.h>
 #include <flock/cxx/exception.hpp>
 #include <flock/cxx/group-view.hpp>
@@ -18,6 +19,9 @@ typedef py11::capsule pymargo_instance_id;
 
 #define MID2CAPSULE(__mid)   py11::capsule((void*)(__mid), "margo_instance_id")
 #define CAPSULE2MID(__caps)  (margo_instance_id)(__caps)
+
+// Static storage for the exception class (needed for exception translator)
+static py11::object flock_exception_class;
 
 // Iterator helper for MembersProxy
 struct MembersIterator {
@@ -67,7 +71,31 @@ struct MetadataIterator {
 
 PYBIND11_MODULE(pyflock_common, m) {
     m.doc() = "Flock common python extension";
-    py11::register_exception<flock::Exception>(m, "Exception", PyExc_RuntimeError);
+
+    // Define the Exception class in Python with a code property
+    py11::exec(R"(
+class Exception(RuntimeError):
+    def __init__(self, message, code):
+        super().__init__(message)
+        self._code = code
+
+    @property
+    def code(self):
+        return self._code
+)", m.attr("__dict__"));
+
+    // Store reference in static variable for the translator
+    flock_exception_class = m.attr("Exception");
+
+    // Register exception translator
+    py11::register_exception_translator([](std::exception_ptr p) {
+        try {
+            if (p) std::rethrow_exception(p);
+        } catch (const flock::Exception &e) {
+            auto exc = flock_exception_class(e.what(), static_cast<int>(e.code()));
+            PyErr_SetObject(flock_exception_class.ptr(), exc.ptr());
+        }
+    });
 
     py11::class_<flock::GroupView::Member>(m, "Member")
         .def(py11::init<const std::string&, uint16_t>())
