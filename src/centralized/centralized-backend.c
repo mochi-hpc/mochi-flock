@@ -1036,6 +1036,7 @@ static flock_return_t centralized_destroy_group(void* ctx)
     if(context->get_view_rpc_id) margo_deregister(context->mid, context->get_view_rpc_id);
     if(context->membership_update_rpc_id) margo_deregister(context->mid, context->membership_update_rpc_id);
     if(context->leave_rpc_id) margo_deregister(context->mid, context->leave_rpc_id);
+    if(context->primary.address) margo_addr_free(context->mid, context->primary.address);
     if(context->config) json_object_put(context->config);
     flock_group_view_clear(&context->view);
     free(context);

@@ -194,7 +194,7 @@ class GroupHandle {
         flock_group_handle_t gh;
         auto err = flock_group_handle_create_from_file(client, filename, mode, &gh);
         FLOCK_CONVERT_AND_THROW(err);
-        return GroupHandle{gh};
+        return GroupHandle{gh, false};
     }
 
     /**
@@ -223,7 +223,7 @@ class GroupHandle {
         auto err = flock_group_handle_create_from_serialized(
             client, serialized_view.data(), serialized_view.size(), mode, &gh);
         FLOCK_CONVERT_AND_THROW(err);
-        return GroupHandle{gh};
+        return GroupHandle{gh, false};
     }
 
     /**

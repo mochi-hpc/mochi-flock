@@ -18,7 +18,6 @@ class TestClient(unittest.TestCase):
             initial_view = view.GroupView()
             initial_view.members.add(address, 42)
             provider = mfs.Provider(engine, 42, json.dumps(config), initial_view)
-            del provider
             engine.finalize()
 
 

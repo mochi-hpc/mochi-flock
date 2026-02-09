@@ -263,6 +263,8 @@ flock_return_t flock_provider_register(
     if(provider)
         *provider = p;
 
+    margo_instance_ref_incr(mid);
+
     margo_trace(mid, "[flock] Provider registered with ID %d", (int)provider_id);
 
 finish:
@@ -301,6 +303,7 @@ static void flock_finalize_provider(void* p)
     free(provider->self_addr_str);
     margo_instance_id mid = provider->mid;
     free(provider);
+    margo_instance_release(mid);
     margo_trace(mid, "[flock] Provider successfuly finalized");
 }
 

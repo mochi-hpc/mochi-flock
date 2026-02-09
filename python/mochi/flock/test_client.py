@@ -11,7 +11,6 @@ class TestClient(unittest.TestCase):
     def test_init_client_from_engine(self):
         with Engine("na+sm") as engine:
             client = mfc.Client(engine)
-            del client
 
 
 if __name__ == '__main__':

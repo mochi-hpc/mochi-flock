@@ -38,21 +38,24 @@ PYBIND11_MODULE(pyflock_client, m) {
              },
              "Create a GroupHandle instance",
              "address"_a,
-             "provider_id"_a=0)
+             "provider_id"_a=0,
+             py11::keep_alive<0,1>())
         .def("make_group_handle_from_file",
              [](const flock::Client& client,
                 const std::string& filename) {
                 return flock::GroupHandle::FromFile(client, filename.c_str());
              },
              "Create a GroupHandle instance",
-             "filename"_a)
+             "filename"_a,
+             py11::keep_alive<0,1>())
         .def("make_group_handle_from_serialized",
              [](const flock::Client& client,
                 std::string_view serialized) {
                 return flock::GroupHandle::FromSerialized(client, serialized);
              },
              "Create a GroupHandle instance",
-             "serialized"_a)
+             "serialized"_a,
+             py11::keep_alive<0,1>())
     ;
     py11::class_<flock::GroupHandle, std::shared_ptr<flock::GroupHandle>>(m, "GroupHandle")
         .def("update", &flock::GroupHandle::update)
