@@ -9,7 +9,7 @@
 #include <margo-timer.h>
 #include "flock/flock-backend.h"
 #include "flock/flock-group-view.h"
-#include "../provider.h"
+#include "../../provider.h"
 #include "centralized-backend.h"
 
 #define RAND_BETWEEN(x, y) ((x) + (((double)rand()) / RAND_MAX)*(y-x))

@@ -10,7 +10,7 @@
 #include <flock/flock-server.h>
 #include <flock/flock-client.h>
 #include <flock/flock-group.h>
-#include "../src/swim/swim-backend.h"
+#include "../src/backends/swim/swim-backend.h"
 #include "helper.hpp"
 #include <unordered_map>
 #include <atomic>

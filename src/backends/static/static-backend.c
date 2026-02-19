@@ -7,7 +7,7 @@
 #include <json-c/json.h>
 #include "flock/flock-backend.h"
 #include "flock/flock-group-view.h"
-#include "../provider.h"
+#include "../../provider.h"
 #include "static-backend.h"
 
 typedef struct static_context {

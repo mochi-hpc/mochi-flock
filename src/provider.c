@@ -8,9 +8,9 @@
 #include "types.h"
 
 /* backends that we want to add at compile time */
-#include "static/static-backend.h"
-#include "centralized/centralized-backend.h"
-#include "swim/swim-backend.h"
+#include "backends/static/static-backend.h"
+#include "backends/centralized/centralized-backend.h"
+#include "backends/swim/swim-backend.h"
 /* Note: other backends can be added dynamically using
  * flock_register_backend */
 

@@ -10,7 +10,7 @@
 #include <margo-timer.h>
 #include "flock/flock-backend.h"
 #include "flock/flock-group-view.h"
-#include "../provider.h"
+#include "../../provider.h"
 #include "swim-backend.h"
 #include "swim-gossip-buffer.h"
 
