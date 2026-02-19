@@ -111,6 +111,7 @@ class Provider {
         m_mid = mid;
         flock_provider_args args;
         args.backend      = nullptr;
+        args.gateway      = nullptr;
         args.initial_view = &initial_view.m_view;
         args.pool         = pool;
         auto err = flock_provider_register(mid, provider_id, config, &args, &m_provider);

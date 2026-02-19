@@ -9,11 +9,17 @@
 #include <margo.h>
 #include <json-c/json.h>
 #include "flock/flock-backend.h"
+#include "flock/flock-gateway.h"
 
 typedef struct flock_group {
     flock_backend_impl* fn;  // pointer to function mapping for this backend
     void*               ctx; // context required by the backend
 } flock_group;
+
+typedef struct flock_gateway {
+    flock_gateway_impl* fn;
+    void*               ctx;
+} flock_gateway;
 
 typedef struct update_callback* update_callback_t;
 struct update_callback {
@@ -29,7 +35,8 @@ typedef struct flock_provider {
     uint16_t            provider_id;   // Provider id
     ABT_pool            pool;          // Pool on which to post RPC requests
     char*               filename;      // Default group file name
-    char*               self_addr_str; // Address of this provider
+    /* Gateway implementation */
+    flock_gateway* gateway;
     /* Group implementation */
     flock_group* group;
     /* List of registered membership and metadata callbacks */

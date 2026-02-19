@@ -33,17 +33,22 @@ typedef struct flock_provider* flock_provider_t;
  *
  * If not provided, the backend will default to the type specified in the
  * JSON configuration passed to flock_provider_register.
+ *
+ * If not provided, the gateway will default to the type specified in the
+ * JSON configuration passed to flock_provider_register.
  */
 struct flock_provider_args {
     ABT_pool            pool;
     flock_group_view_t* initial_view;
     flock_backend_impl* backend;
+    flock_gateway_impl* gateway;
 };
 
 #define FLOCK_PROVIDER_ARGS_INIT { \
     /* .pool = */ ABT_POOL_NULL,   \
     /* .initial_view = */ NULL,    \
-    /* .backend = */ NULL          \
+    /* .backend = */ NULL,         \
+    /* .gateway = */ NULL          \
 }
 
 /**
@@ -56,7 +61,11 @@ struct flock_provider_args {
  *     "bootstrap": "<method>",
  *     "group": {
  *         "type": "static", // or another backend type
- *         "config": { ... } // backend-specified configuration
+ *         "config": { ... } // backend-specific configuration
+ *     },
+ *     "gateway": {
+ *         "type": "default", // or another gateway type
+ *         "config": { ... }  // gateway-specific configuration
  *     },
  *     "file": "<path>"
  * }

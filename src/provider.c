@@ -48,6 +48,7 @@ static void flock_get_view_ult(hg_handle_t h);
 static inline void serialize_view_to_file(void* uargs, const flock_group_view_t* view)
 {
     flock_provider_t provider = (flock_provider_t)uargs;
+    const char* self_addr_str = provider->gateway->fn->get_public_address(provider->gateway->ctx);
 
     if(!provider->filename) return;
 
@@ -55,7 +56,7 @@ static inline void serialize_view_to_file(void* uargs, const flock_group_view_t*
     FLOCK_GROUP_VIEW_LOCK((flock_group_view_t*)view);
     flock_member_t* first_member = flock_group_view_member_at((flock_group_view_t*)view, 0);
     if(!first_member || first_member->provider_id != provider->provider_id
-    || strcmp(first_member->address, provider->self_addr_str) != 0) {
+    || strcmp(first_member->address, self_addr_str) != 0) {
         FLOCK_GROUP_VIEW_UNLOCK((flock_group_view_t*)view);
         return;
     }
@@ -83,9 +84,16 @@ flock_return_t flock_provider_register(
     hg_id_t id;
     hg_bool_t flag;
     flock_return_t ret = FLOCK_SUCCESS;
-    hg_return_t hret = HG_SUCCESS;
     struct json_object* config = NULL;
     struct json_object* group_config = NULL;
+    struct json_object* gateway_config = NULL;
+
+    flock_gateway_init_args_t gateway_init_args = {
+        .mid = mid,
+        .pool = a.pool,
+        .provider_id = provider_id,
+        .config = NULL
+    };
 
     flock_backend_init_args_t backend_init_args = {
         .mid = mid,
@@ -158,6 +166,38 @@ flock_return_t flock_provider_register(
     struct json_object* file = json_object_object_get(config, "file");
     if(file) filename = json_object_get_string(file);
 
+    /* "gateway" field */
+    struct json_object* gateway = json_object_object_get(config, "gateway");
+    if(gateway) {
+        if(!json_object_is_type(gateway, json_type_object)) {
+            margo_error(mid, "[flock] \"gateway\" field should be an object in provider configuration");
+            ret = FLOCK_ERR_INVALID_CONFIG;
+            goto finish;
+        }
+        if(!a.gateway) {
+            struct json_object* gateway_type = json_object_object_get(gateway, "type");
+            if (!json_object_is_type(gateway_type, json_type_string)) {
+                margo_error(mid, "[flock] \"type\" field in gateway configuration should be a string");
+                ret = FLOCK_ERR_INVALID_CONFIG;
+                goto finish;
+            }
+            const char* type = json_object_get_string(gateway_type);
+            a.gateway = find_gateway_impl(type);
+            if (!a.gateway) {
+                margo_error(mid, "[flock] Could not find gateway of type \"%s\"", type);
+                ret = FLOCK_ERR_INVALID_CONFIG;
+                goto finish;
+            }
+        } else if(json_object_object_get(gateway, "type")) {
+            margo_warning(mid, "[flock] \"type\" field ignored because a "
+                          "gateway implementation was provided");
+        }
+        gateway_config = json_object_object_get(gateway, "config");
+        if(group_config) json_object_get(group_config);
+    } else if(!a.gateway) {
+        a.gateway = find_gateway_impl("default");
+    }
+
     /* "group" field */
     struct json_object* group = json_object_object_get(config, "group");
     if (group) {
@@ -194,9 +234,17 @@ flock_return_t flock_provider_register(
         goto finish;
     }
 
+    if(!a.gateway) {
+        margo_error(mid, "[flock] No gateway type provided for the group");
+        ret = FLOCK_ERR_INVALID_CONFIG;
+        goto finish;
+    }
+
     if(!group_config) group_config = json_object_new_object();
+    if(!gateway_config) gateway_config = json_object_new_object();
 
     backend_init_args.config = group_config;
+    gateway_init_args.config = gateway_config;
 
     /* allocate provider */
     p = (flock_provider_t)calloc(1, sizeof(*p));
@@ -217,26 +265,22 @@ flock_return_t flock_provider_register(
     p->update_callbacks = NULL;
     backend_init_args.callback_context = p;
 
-    /* get the address of this provider as a string */
-    char self_addr_str[256];
-    hg_size_t self_addr_str_size = 256;
-    hg_addr_t self_addr = HG_ADDR_NULL;
-    hret = margo_addr_self(mid, &self_addr);
-    if(hret != HG_SUCCESS) {
+    /* create the gateway context */
+    void* gateway_context = NULL;
+    ret = a.gateway->init_gateway(&gateway_init_args, &gateway_context);
+    if (ret != FLOCK_SUCCESS) {
         // LCOV_EXCL_START
-        margo_error(mid, "[flock] Could not get self address");
+        margo_error(mid, "[flock] Could not create gateway, implementation returned %d", ret);
         goto finish;
         // LCOV_EXCL_STOP
     }
-    hret = margo_addr_to_string(mid, self_addr_str, &self_addr_str_size, self_addr);
-    margo_addr_free(mid, self_addr);
-    if(hret != HG_SUCCESS) {
-        // LCOV_EXCL_START
-        margo_error(mid, "[flock] Could convert self address into a string");
-        goto finish;
-        // LCOV_EXCL_STOP
-    }
-    p->self_addr_str = strdup(self_addr_str);
+
+    /* set the provider's gateway */
+    p->gateway      = calloc(1, sizeof(*(p->gateway)));
+    p->gateway->ctx = gateway_context;
+    p->gateway->fn  = a.gateway;
+
+    const char* self_addr_str = p->gateway->fn->get_public_address(p->gateway->ctx);
 
     if(!flock_group_view_find_member(&backend_init_args.initial_view, self_addr_str, provider_id))
         backend_init_args.join = true;
@@ -309,12 +353,17 @@ static void flock_finalize_provider(void* p)
     margo_deregister(provider->mid, provider->get_view_id);
     /* FIXME deregister other RPC ids ... */
 
+    /* destroy the gateway's context */
+    if(provider->gateway)
+        provider->gateway->fn->destroy_gateway(provider->gateway->ctx);
+    free(provider->gateway);
+
     /* destroy the group's context */
     if(provider->group)
         provider->group->fn->destroy_group(provider->group->ctx);
     free(provider->group);
+
     free(provider->filename);
-    free(provider->self_addr_str);
     margo_instance_id mid = provider->mid;
     free(provider);
     margo_instance_release(mid);
@@ -334,7 +383,7 @@ flock_return_t flock_provider_destroy(
     return FLOCK_SUCCESS;
 }
 
-static inline void get_backend_config(void* uargs, const struct json_object* config) {
+static inline void retrieve_config(void* uargs, const struct json_object* config) {
     struct json_object* root = (struct json_object*)uargs;
     struct json_object* config_cpy = NULL;
     json_object_deep_copy((struct json_object*)config, &config_cpy,  NULL);
@@ -345,12 +394,19 @@ char* flock_provider_get_config(flock_provider_t provider)
 {
     if (!provider) return NULL;
     struct json_object* root = json_object_new_object();
+    if(provider->gateway) {
+        struct json_object* gateway = json_object_new_object();
+        json_object_object_add(root, "gateway", gateway);
+        struct json_object* gateway_type = json_object_new_string(provider->gateway->fn->name);
+        json_object_object_add(gateway, "type", gateway_type);
+        (provider->gateway->fn->get_config)(provider->gateway->ctx, retrieve_config, (void*)gateway);
+    }
     if(provider->group) {
         struct json_object* group = json_object_new_object();
         json_object_object_add(root, "group", group);
         struct json_object* group_type = json_object_new_string(provider->group->fn->name);
         json_object_object_add(group, "type", group_type);
-        (provider->group->fn->get_config)(provider->group->ctx, get_backend_config, (void*)root);
+        (provider->group->fn->get_config)(provider->group->ctx, retrieve_config, (void*)group);
     }
     if(provider->filename) {
         json_object_object_add(root, "file",

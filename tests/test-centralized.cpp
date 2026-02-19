@@ -62,8 +62,8 @@ TEST_CASE("Test group handle for centralized group", "[centralize]") {
         char* config = flock_provider_get_config(group->providers[0]);
         REQUIRE(config != nullptr);
         std::stringstream ss;
-        ss << R"({"group":{"type":"centralized"},"config":{"ping_timeout_ms":400.0,"ping_interval_ms":[800.0,1000.0],"ping_max_num_timeouts":2,)"
-           << R"("primary_address":")" << self_addr << R"(","primary_provider_id":1}})";
+        ss << R"({"gateway":{"type":"default","config":{}},"group":{"type":"centralized","config":{"ping_timeout_ms":400.0,"ping_interval_ms":[800.0,1000.0],"ping_max_num_timeouts":2,)"
+           << R"("primary_address":")" << self_addr << R"(","primary_provider_id":1}}})";
         std::string expected = ss.str();
         REQUIRE(strcmp(config, expected.c_str()) == 0);
         free(config);

@@ -55,7 +55,7 @@ TEST_CASE("Test group handle for centralized group", "[centralize]") {
     SECTION("Test provider functionalities") {
         char* config = flock_provider_get_config(group->providers[0]);
         REQUIRE(config != nullptr);
-        const char* expected = R"({"group":{"type":"static"},"config":{}})";
+        const char* expected = R"({"gateway":{"type":"default","config":{}},"group":{"type":"static","config":{}}})";
         REQUIRE(strcmp(config, expected) == 0);
         free(config);
     }
