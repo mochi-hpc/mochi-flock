@@ -14,6 +14,9 @@ set (backend-src-files
      backends/swim/swim-backend.c
      backends/swim/swim-gossip-buffer.c)
 
+set (gateway-src-files
+     gateways/default/default-gateway.c)
+
 set (bedrock-module-src-files
      bedrock-module.cpp)
 
@@ -42,7 +45,7 @@ set_target_properties (flock-client
     SOVERSION ${FLOCK_VERSION_MAJOR})
 
 # server library
-add_library (flock-server ${server-src-files} ${backend-src-files})
+add_library (flock-server ${server-src-files} ${backend-src-files} ${gateway-src-files})
 add_library (flock::server ALIAS flock-server)
 target_link_libraries (flock-server
     PUBLIC PkgConfig::margo

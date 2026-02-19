@@ -8,6 +8,7 @@
 
 #include <flock/flock-common.h>
 #include <flock/flock-backend.h>
+#include <flock/flock-gateway.h>
 #include <flock/flock-group.h>
 #include <margo.h>
 

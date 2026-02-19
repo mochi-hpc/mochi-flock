@@ -13,6 +13,9 @@
 #include "backends/swim/swim-backend.h"
 /* Note: other backends can be added dynamically using
  * flock_register_backend */
+#include "gateways/default/default-gateway.h"
+/* Note: other gateways can be added dynamically using
+ * flock_register_backend */
 
 static void flock_finalize_provider(void* p);
 
@@ -20,9 +23,17 @@ static void flock_finalize_provider(void* p);
 #define FLOCK_MAX_NUM_BACKENDS 64
 static flock_backend_impl* g_flock_backend_types[FLOCK_MAX_NUM_BACKENDS] = {0};
 
+/* global array of up to 64 registered gateways */
+#define FLOCK_MAX_NUM_GATEWAYS 64
+static flock_gateway_impl* g_flock_gateway_types[FLOCK_MAX_NUM_GATEWAYS] = {0};
+
 /* Functions to manipulate the list of backend types */
 static inline flock_backend_impl* find_backend_impl(const char* name);
 static inline flock_return_t add_backend_impl(flock_backend_impl* backend);
+
+/* Functions to manipulate the list of gateway types */
+static inline flock_gateway_impl* find_gateway_impl(const char* name);
+static inline flock_return_t add_gateway_impl(flock_gateway_impl* backend);
 
 /* Functions to dispatch updates to user-supplied callback functions */
 static void dispatch_member_update(
@@ -92,10 +103,13 @@ flock_return_t flock_provider_register(
 
     margo_trace(mid, "[flock] Registering provider with provider id %u", provider_id);
 
-    /* add backends available at compiler time (e.g. default/static backends) */
-    flock_register_static_backend(); // function from "static/static-backend.h"
-    flock_register_centralized_backend(); // function from "centralized/centralized-backend.h"
-    flock_register_swim_backend(); // function from "swim/swim-backend.h"
+    /* add backends available at compiler time */
+    flock_register_static_backend(); // function from "backends/static/static-backend.h"
+    flock_register_centralized_backend(); // function from "backends/centralized/centralized-backend.h"
+    flock_register_swim_backend(); // function from "backends/swim/swim-backend.h"
+
+    /* register gateways */
+    flock_register_default_gateway(); // function from gateways/default/default-gateway.h
 
     /* check if the margo instance is listening */
     flag = margo_is_listening(mid);
@@ -355,6 +369,14 @@ flock_return_t flock_provider_register_backend(
     return add_backend_impl(backend_impl);
 }
 
+flock_return_t flock_provider_register_gateway(
+        flock_gateway_impl* gateway_impl)
+{
+    margo_trace(MARGO_INSTANCE_NULL, "Adding gatewat implementation \"%s\" to FLOCK",
+                gateway_impl->name);
+    return add_gateway_impl(gateway_impl);
+}
+
 static void get_view_callback(void* uargs, const flock_group_view_t* view)
 {
     hg_handle_t handle = (hg_handle_t)uargs;
@@ -431,6 +453,34 @@ static inline flock_return_t add_backend_impl(
 flock_return_t flock_register_backend(flock_backend_impl* backend_impl)
 {
     return add_backend_impl(backend_impl);
+}
+
+static inline flock_gateway_impl* find_gateway_impl(const char* name)
+{
+    for(size_t i = 0; i < FLOCK_MAX_NUM_GATEWAYS; i++) {
+        flock_gateway_impl* impl = g_flock_gateway_types[i];
+        if(impl == NULL) return NULL;
+        if(strcmp(name, impl->name) == 0)
+            return impl;
+    }
+    return NULL;
+}
+
+static inline flock_return_t add_gateway_impl(
+        flock_gateway_impl* gateway)
+{
+    if(find_gateway_impl(gateway->name)) return FLOCK_SUCCESS;
+    for(size_t i = 0; i < FLOCK_MAX_NUM_BACKENDS; i++) {
+        if(g_flock_gateway_types[i]) continue;
+        g_flock_gateway_types[i] = gateway;
+        return FLOCK_SUCCESS;
+    }
+    return FLOCK_ERR_ALLOCATION;
+}
+
+flock_return_t flock_register_gateway(flock_gateway_impl* gateway_impl)
+{
+    return add_gateway_impl(gateway_impl);
 }
 
 flock_return_t flock_provider_add_update_callbacks(
