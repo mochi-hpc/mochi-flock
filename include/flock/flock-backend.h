@@ -31,12 +31,18 @@ struct json_object;
  * need to be called by the backend whenever a member leaves or joins,
  * and whenever the metadata is updated, respectively. When called, these
  * function must be passed the provided callback_context.
+ *
+ * @note The backend should NOT use margo_addr_self to get its own address
+ * as it may be behind a gateway. Instead, the self_addr_str field should
+ * be used. This will have been initialized to a public address by the
+ * gateway system.
  */
 typedef struct flock_backend_init_args {
     margo_instance_id          mid;
     uint16_t                   provider_id;
     ABT_pool                   pool;
     struct json_object*        config;
+    const char*                self_addr_str;
     bool                       join;
     flock_group_view_t         initial_view;
     flock_membership_update_fn member_update_callback;

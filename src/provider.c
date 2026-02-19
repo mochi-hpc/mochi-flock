@@ -280,9 +280,10 @@ flock_return_t flock_provider_register(
     p->gateway->ctx = gateway_context;
     p->gateway->fn  = a.gateway;
 
-    const char* self_addr_str = p->gateway->fn->get_public_address(p->gateway->ctx);
+    backend_init_args.self_addr_str = p->gateway->fn->get_public_address(p->gateway->ctx);
 
-    if(!flock_group_view_find_member(&backend_init_args.initial_view, self_addr_str, provider_id))
+    if(!flock_group_view_find_member(&backend_init_args.initial_view,
+                                     backend_init_args.self_addr_str, provider_id))
         backend_init_args.join = true;
 
     /* register RPCs */

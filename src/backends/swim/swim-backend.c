@@ -967,6 +967,7 @@ static flock_return_t swim_create_group(
     flock_backend_init_args_t* args,
     void** context)
 {
+    hg_return_t hret = HG_SUCCESS;
     flock_return_t ret = FLOCK_SUCCESS;
     swim_context* ctx = NULL;
 
@@ -1003,18 +1004,6 @@ static flock_return_t swim_create_group(
 
     /* Get self address */
     margo_instance_id mid = args->mid;
-    hg_addr_t self_address;
-    char self_address_string[256];
-    hg_size_t self_address_size = 256;
-    hg_return_t hret = margo_addr_self(mid, &self_address);
-    if(hret != HG_SUCCESS) {
-        return FLOCK_ERR_FROM_MERCURY;
-    }
-    hret = margo_addr_to_string(mid, self_address_string, &self_address_size, self_address);
-    margo_addr_free(mid, self_address);
-    if(hret != HG_SUCCESS) {
-        return FLOCK_ERR_FROM_MERCURY;
-    }
 
     /* Allocate context */
     ctx = (swim_context*)calloc(1, sizeof(*ctx));
@@ -1025,7 +1014,7 @@ static flock_return_t swim_create_group(
     ctx->mid = mid;
     ctx->provider_id = args->provider_id;
     ctx->pool = args->pool;
-    ctx->self_address = strdup(self_address_string);
+    ctx->self_address = strdup(args->self_addr_str);
     ctx->self_incarnation = 1;
     atomic_store(&ctx->shutting_down, false);
 
@@ -1123,7 +1112,7 @@ static flock_return_t swim_create_group(
                     state->status = SWIM_ALIVE;
                     state->incarnation = ctx->self_incarnation;
                     state->suspicion_start = 0;
-                    margo_addr_self(mid, &state->address);
+                    margo_addr_lookup(mid, ctx->self_address, &state->address);
                     self_member->extra.data = state;
                     self_member->extra.free = swim_member_state_free;
                 }

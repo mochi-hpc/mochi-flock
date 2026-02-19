@@ -191,6 +191,7 @@ static flock_return_t centralized_create_group(
         flock_backend_init_args_t* args,
         void** context)
 {
+    hg_return_t          hret = HG_SUCCESS;
     flock_return_t       ret = FLOCK_SUCCESS;
     centralized_context* ctx = NULL;
     flock_member_t* primary_member = NULL;
@@ -342,23 +343,7 @@ static flock_return_t centralized_create_group(
         ping_max_num_timeouts = (unsigned)x;
     }
 
-    /* get self address */
     margo_instance_id mid = args->mid;
-    hg_addr_t self_address;
-    char      self_address_string[256];
-    hg_size_t self_address_size = 256;
-    hg_return_t hret = margo_addr_self(mid, &self_address);
-    if(hret != HG_SUCCESS) {
-        ret = FLOCK_ERR_FROM_MERCURY;
-        goto error;
-    }
-
-    hret = margo_addr_to_string(mid, self_address_string, &self_address_size, self_address);
-    margo_addr_free(mid, self_address);
-    if(hret != HG_SUCCESS) {
-        ret = FLOCK_ERR_FROM_MERCURY;
-        goto error;
-    }
 
     /* check who is the primary member */
     if(primary_address) {
@@ -408,7 +393,7 @@ static flock_return_t centralized_create_group(
     ctx->mid = mid;
 
     ctx->is_primary = (primary_member->provider_id == args->provider_id)
-                   && (strcmp(primary_member->address, self_address_string) == 0);
+                   && (strcmp(primary_member->address, args->self_addr_str) == 0);
 
     /* lookup primary member's address and provider ID */
     hret = margo_addr_lookup(mid, primary_member->address, &ctx->primary.address);
