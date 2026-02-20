@@ -15,7 +15,8 @@ set (backend-src-files
      backends/swim/swim-gossip-buffer.c)
 
 set (gateway-src-files
-     gateways/default/default-gateway.c)
+     gateways/default/default-gateway.c
+     gateways/pinggy/pinggy-gateway.c)
 
 set (bedrock-module-src-files
      bedrock-module.cpp)

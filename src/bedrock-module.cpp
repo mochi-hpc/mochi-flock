@@ -198,6 +198,13 @@ class FlockComponent : public bedrock::AbstractComponent {
     void* getHandle() override {
         return static_cast<void*>(m_provider);
     }
+
+    std::string getConfig() override {
+        char* config = flock_provider_get_config(m_provider);
+        std::string result = config ? config : "{}";
+        free(config);
+        return result;
+    }
 };
 
 BEDROCK_REGISTER_COMPONENT_TYPE(flock, FlockComponent)

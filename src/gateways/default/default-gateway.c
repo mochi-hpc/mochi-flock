@@ -53,7 +53,7 @@ static flock_return_t default_gateway_get_config(
     return FLOCK_SUCCESS;
 }
 
-static const char* default_gateway_get_public_address(void* ctx)
+static const char* default_gateway_get_address(void* ctx)
 {
     default_gateway_context* context = (default_gateway_context*)ctx;
     return context ? context->public_address_str : NULL;
@@ -64,7 +64,8 @@ static flock_gateway_impl default_gateway = {
     .init_gateway       = default_gateway_create,
     .destroy_gateway    = default_gateway_destroy,
     .get_config         = default_gateway_get_config,
-    .get_public_address = default_gateway_get_public_address
+    .get_public_address = default_gateway_get_address,
+    .get_local_address  = default_gateway_get_address
 };
 
 flock_return_t flock_register_default_gateway(void)

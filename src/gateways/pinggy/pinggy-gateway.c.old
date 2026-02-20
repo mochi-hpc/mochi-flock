@@ -1,0 +1,604 @@
+/*
+ * (C) 2024 The University of Chicago
+ *
+ * See COPYRIGHT in top-level directory.
+ */
+#define _XOPEN_SOURCE 600
+#include <string.h>
+#include <json-c/json.h>
+#include <spawn.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <errno.h>
+#include <string.h>
+#include <netdb.h>
+#include <arpa/inet.h>
+#include <ctype.h>
+#include <poll.h>
+#include <termios.h>
+#include <flock/flock-common.h>
+#include "flock/flock-gateway.h"
+#include "pinggy-gateway.h"
+
+extern char **environ;
+
+typedef struct {
+    pid_t pid;
+    int   pty_master_fd;   // read/write to the pseudo terminal
+    char  remote_host[256];
+    int   remote_port;
+    char  remote_addr[300]; // "tcp://<IP>:<PORT>"
+} ssh_tunnel_t;
+
+typedef struct pinggy_gateway_context {
+    struct json_object* config;
+    ssh_tunnel_t        tunnel;
+} pinggy_gateway_context;
+
+static void strip_ansi(char *dst, size_t dstsz, const char *src)
+{
+    size_t di = 0;
+
+    for (size_t i = 0; src[i] && di + 1 < dstsz; i++) {
+        if (src[i] == '\x1b') {
+            // Skip ANSI sequence
+            i++;
+            if (src[i] == '[') {
+                while (src[i] && !isalpha((unsigned char)src[i]))
+                    i++;
+            }
+            continue;
+        }
+        dst[di++] = src[i];
+    }
+
+    dst[di] = '\0';
+}
+
+static int resolve_host(const char *host, char *ipbuf, size_t ipbufsz)
+{
+    struct addrinfo hints = {0}, *res = NULL;
+
+    hints.ai_family = AF_INET; // IPv4 (simpler)
+
+    if (getaddrinfo(host, NULL, &hints, &res) != 0)
+        return -1;
+
+    struct sockaddr_in *addr = (struct sockaddr_in *)res->ai_addr;
+
+    if (!inet_ntop(AF_INET, &addr->sin_addr, ipbuf, ipbufsz)) {
+        freeaddrinfo(res);
+        return -1;
+    }
+
+    freeaddrinfo(res);
+    return 0;
+}
+
+#if 0
+static int resolve_remote_addr(ssh_tunnel_t *handle)
+{
+    struct addrinfo hints;
+    struct addrinfo *res = NULL, *rp = NULL;
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_family = AF_UNSPEC; // allow IPv4 or IPv6
+
+    char port_str[16];
+    snprintf(port_str, sizeof(port_str), "%d", handle->remote_port);
+
+    int ret = getaddrinfo(handle->remote_host, port_str, &hints, &res);
+    if (ret != 0)
+        return -1;
+
+    char ipstr[INET6_ADDRSTRLEN];
+    int found = 0;
+
+    // Prefer IPv4 first
+    for (rp = res; rp; rp = rp->ai_next) {
+        void *addr = NULL;
+
+        if (rp->ai_family == AF_INET) {
+            struct sockaddr_in *ipv4 = (struct sockaddr_in *)rp->ai_addr;
+            addr = &ipv4->sin_addr;
+        } else if (rp->ai_family == AF_INET6) {
+            struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)rp->ai_addr;
+            addr = &ipv6->sin6_addr;
+        } else {
+            continue;
+        }
+
+        if (!inet_ntop(rp->ai_family, addr, ipstr, sizeof(ipstr)))
+            continue;
+
+        found = 1;
+        break;
+    }
+
+    freeaddrinfo(res);
+
+    if (!found)
+        return -1;
+
+    // Format final tcp:// string
+    if (strchr(ipstr, ':')) {
+        // IPv6 needs brackets
+        snprintf(handle->remote_addr,
+                 sizeof(handle->remote_addr),
+                 "tcp://[%s]:%d",
+                 ipstr,
+                 handle->remote_port);
+    } else {
+        snprintf(handle->remote_addr,
+                 sizeof(handle->remote_addr),
+                 "tcp://%s:%d",
+                 ipstr,
+                 handle->remote_port);
+    }
+
+    return 0;
+}
+
+static int parse_tcp_address(const char *line,
+                             char *host_out,
+                             size_t host_size,
+                             int *port_out)
+{
+    const char *p = strstr(line, "tcp://");
+    if (!p)
+        return 0;
+
+    p += 6; // skip "tcp://"
+
+    const char *colon = strchr(p, ':');
+    if (!colon)
+        return 0;
+
+    size_t host_len = (size_t)(colon - p);
+    if (host_len == 0 || host_len >= host_size)
+        return 0;
+
+    memcpy(host_out, p, host_len);
+    host_out[host_len] = '\0';
+
+    char *endptr;
+    long port = strtol(colon + 1, &endptr, 10);
+    if (port <= 0 || port > 65535)
+        return 0;
+
+    *port_out = (int)port;
+    return 1;
+}
+
+static int parse_ip_and_port(const char *address, char *ip, size_t ip_size, int *port)
+{
+    if (!address || !ip || !port || ip_size == 0)
+        return -1;
+
+    const char *p = strstr(address, "://");
+    if (!p)
+        return -1;
+
+    p += 3; // skip "://"
+
+    const char *host_start = p;
+    const char *host_end = NULL;
+    const char *port_start = NULL;
+
+    // ---------- IPv6 case: [addr]:port ----------
+    if (*host_start == '[') {
+        host_start++; // skip '['
+        host_end = strchr(host_start, ']');
+        if (!host_end)
+            return -1;
+
+        if (host_end[1] != ':')
+            return -1;
+
+        port_start = host_end + 2;
+    }
+    // ---------- IPv4 / hostname case ----------
+    else {
+        host_end = strrchr(host_start, ':');
+        if (!host_end)
+            return -1;
+
+        port_start = host_end + 1;
+    }
+
+    // ---------- Copy IP ----------
+    size_t host_len = (size_t)(host_end - host_start);
+    if (host_len == 0 || host_len >= ip_size)
+        return -1;
+
+    memcpy(ip, host_start, host_len);
+    ip[host_len] = '\0';
+
+    // ---------- Parse port ----------
+    char *endptr;
+    long pval = strtol(port_start, &endptr, 10);
+
+    if (endptr == port_start || *endptr != '\0')
+        return -1;
+
+    if (pval <= 0 || pval > 65535)
+        return -1;
+
+    *port = (int)pval;
+    return 0;
+}
+
+static int start_ssh_tunnel(margo_instance_id mid, const char *ip, int port, ssh_tunnel_t *handle)
+{
+    if (!ip || !handle)
+        return -1;
+
+    memset(handle, 0, sizeof(*handle));
+
+    int pipefd[2];
+    margo_debug(mid, "[flock:pinggy] Opening pipe...");
+    if (pipe(pipefd) != 0) {
+        perror("pipe");
+        return -1;
+    }
+
+    // ---------- spawn setup ----------
+
+    posix_spawn_file_actions_t actions;
+    posix_spawn_file_actions_init(&actions);
+
+    posix_spawn_file_actions_adddup2(&actions, pipefd[1], STDOUT_FILENO);
+    posix_spawn_file_actions_adddup2(&actions, pipefd[1], STDERR_FILENO);
+    posix_spawn_file_actions_addclose(&actions, pipefd[0]);
+
+    posix_spawnattr_t attr;
+    posix_spawnattr_init(&attr);
+
+    short flags = POSIX_SPAWN_SETPGROUP;
+    posix_spawnattr_setflags(&attr, flags);
+    posix_spawnattr_setpgroup(&attr, 0);
+
+    char remote_arg[256];
+    snprintf(remote_arg, sizeof(remote_arg), "-R0:%s:%d", ip, port);
+
+    char *argv[] = {
+        "ssh",
+        "-p", "443",
+        remote_arg,
+#if 0
+        "-o", "ExitOnForwardFailure=yes",
+        "-o", "ServerAliveInterval=60",
+        "-o", "ServerAliveCountMax=3",
+#endif
+        "tcp@free.pinggy.io",
+        NULL
+    };
+
+    margo_debug(mid, "[flock:pinggy] Spawning child process with tunnel...");
+    pid_t pid;
+    int status = posix_spawnp(&pid, "ssh", &actions, &attr, argv, environ);
+
+    posix_spawn_file_actions_destroy(&actions);
+    posix_spawnattr_destroy(&attr);
+
+    if (status != 0) {
+        close(pipefd[0]);
+        close(pipefd[1]);
+        errno = status;
+        perror("posix_spawnp");
+        return -1;
+    }
+
+    close(pipefd[1]);
+
+    handle->pid = pid;
+    handle->stdout_fd = pipefd[0];
+
+    // ---------- wait for tunnel line ----------
+    margo_debug(mid, "[flock:pinggy] Reading public address...");
+
+    struct pollfd pfd = {
+        .fd = handle->stdout_fd,
+        .events = POLLIN
+    };
+
+    char buffer[4096];
+    size_t used = 0;
+
+    const int timeout_ms = 15000; // 15s timeout
+    int elapsed = 0;
+    const int step = 250;
+
+    while (elapsed < timeout_ms) {
+        int pr = poll(&pfd, 1, step);
+        elapsed += step;
+
+        if (pr < 0) {
+            perror("poll");
+            goto fail;
+        }
+
+        if (pr == 0)
+            continue;
+
+        ssize_t n = read(handle->stdout_fd,
+                         buffer + used,
+                         sizeof(buffer) - 1 - used);
+
+        if (n <= 0)
+            goto fail;
+
+        used += (size_t)n;
+        buffer[used] = '\0';
+
+        // scan line by line
+        char *line = buffer;
+        while (line) {
+            char *next = strchr(line, '\n');
+            if (next)
+                *next = '\0';
+
+            if (parse_tcp_address(line,
+                                  handle->remote_host,
+                                  sizeof(handle->remote_host),
+                                  &handle->remote_port)) {
+                // Resolve hostname to IP
+                if (resolve_remote_addr(handle) != 0) {
+                    goto fail;
+                }
+                return 0; // success
+            }
+
+            if (!next)
+                break;
+
+            line = next + 1;
+        }
+
+        // prevent overflow
+        if (used > sizeof(buffer) / 2) {
+            memmove(buffer, buffer + used/2, used - used/2);
+            used -= used/2;
+        }
+    }
+
+fail:
+    kill(-handle->pid, SIGTERM);
+    waitpid(handle->pid, NULL, 0);
+    close(handle->stdout_fd);
+    memset(handle, 0, sizeof(*handle));
+    errno = ETIMEDOUT;
+    return -1;
+}
+
+static int stop_ssh_tunnel(ssh_tunnel_t *handle)
+{
+    if (!handle)
+        return -1;
+
+    // Kill entire process group
+    if (kill(-handle->pid, SIGTERM) != 0) {
+        perror("kill");
+        return -1;
+    }
+
+    waitpid(handle->pid, NULL, 0);
+
+    close(handle->stdout_fd);
+
+    return 0;
+}
+#endif
+
+int start_ssh_tunnel(const char *ip, int port, ssh_tunnel_t *handle)
+{
+    if (!ip || !handle)
+        return -1;
+
+    memset(handle, 0, sizeof(*handle));
+
+    // =============================
+    // 1️⃣ Create PTY
+    // =============================
+    int master_fd = posix_openpt(O_RDWR | O_NOCTTY);
+    if (master_fd < 0)
+        return -1;
+
+    if (grantpt(master_fd) != 0 || unlockpt(master_fd) != 0) {
+        close(master_fd);
+        return -1;
+    }
+
+    char *slave_name = ptsname(master_fd);
+    if (!slave_name) {
+        close(master_fd);
+        return -1;
+    }
+
+    int slave_fd = open(slave_name, O_RDWR | O_NOCTTY);
+    if (slave_fd < 0) {
+        close(master_fd);
+        return -1;
+    }
+
+    // =============================
+    // 2️⃣ Spawn ssh
+    // =============================
+    posix_spawn_file_actions_t actions;
+    posix_spawn_file_actions_init(&actions);
+
+    posix_spawn_file_actions_adddup2(&actions, slave_fd, STDIN_FILENO);
+    posix_spawn_file_actions_adddup2(&actions, slave_fd, STDOUT_FILENO);
+    posix_spawn_file_actions_adddup2(&actions, slave_fd, STDERR_FILENO);
+    posix_spawn_file_actions_addclose(&actions, master_fd);
+
+    posix_spawnattr_t attr;
+    posix_spawnattr_init(&attr);
+
+    short flags = POSIX_SPAWN_SETPGROUP;
+    posix_spawnattr_setflags(&attr, flags);
+    posix_spawnattr_setpgroup(&attr, 0);
+
+    char remote_arg[256];
+    snprintf(remote_arg, sizeof(remote_arg), "0:%s:%d", ip, port);
+
+    char *argv[] = {
+        "ssh",
+        "-p", "443",
+        "-R", remote_arg,
+        "-o", "ExitOnForwardFailure=yes",
+        "-o", "ServerAliveInterval=60",
+        "-o", "ServerAliveCountMax=3",
+        "tcp@free.pinggy.io",
+        NULL
+    };
+
+    pid_t pid;
+    int status = posix_spawnp(&pid, "ssh", &actions, &attr, argv, environ);
+
+    posix_spawn_file_actions_destroy(&actions);
+    posix_spawnattr_destroy(&attr);
+    close(slave_fd);
+
+    if (status != 0) {
+        close(master_fd);
+        errno = status;
+        return -1;
+    }
+
+    handle->pid = pid;
+    handle->pty_master_fd = master_fd;
+
+    // =============================
+    // 3️⃣ Read until we find address
+    // =============================
+    regex_t re;
+    regcomp(&re,
+        "tcp://([a-zA-Z0-9.-]+):([0-9]+)",
+        REG_EXTENDED);
+
+    char raw[4096];
+    char clean[4096];
+    char accum[8192] = {0};
+
+    while (1) {
+        ssize_t n = read(master_fd, raw, sizeof(raw) - 1);
+        if (n <= 0)
+            break;
+
+        raw[n] = '\0';
+
+        strip_ansi(clean, sizeof(clean), raw);
+
+        strncat(accum, clean, sizeof(accum) - strlen(accum) - 1);
+
+        regmatch_t m[3];
+        if (regexec(&re, accum, 3, m, 0) == 0) {
+            // Extract host
+            int hlen = m[1].rm_eo - m[1].rm_so;
+            int plen = m[2].rm_eo - m[2].rm_so;
+
+            snprintf(handle->public_host, sizeof(handle->public_host),
+                     "%.*s", hlen, accum + m[1].rm_so);
+
+            char portbuf[32];
+            snprintf(portbuf, sizeof(portbuf),
+                     "%.*s", plen, accum + m[2].rm_so);
+
+            handle->public_port = atoi(portbuf);
+
+            resolve_host(handle->public_host,
+                         handle->public_ip,
+                         sizeof(handle->public_ip));
+
+            regfree(&re);
+            return 0;
+        }
+    }
+
+    regfree(&re);
+    return -1;
+}
+
+static flock_return_t pinggy_gateway_create(
+        flock_gateway_init_args_t* args,
+        void** context)
+{
+    int ret;
+    pinggy_gateway_context* ctx = (pinggy_gateway_context*)calloc(1, sizeof(*ctx));
+    if(!ctx) return FLOCK_ERR_ALLOCATION;
+
+    ctx->config = json_object_new_object();
+
+    char self_addr_str[256] = {0};
+    hg_addr_t self_addr = HG_ADDR_NULL;
+    hg_size_t addr_str_size = 256;
+
+    margo_addr_self(args->mid, &self_addr);
+    margo_addr_to_string(args->mid, self_addr_str, &addr_str_size, self_addr);
+    margo_addr_free(args->mid, self_addr);
+    margo_trace(args->mid, "[flock:pinggy] Margo address is %s", self_addr_str);
+
+    char local_ip[128] = {0};
+    int local_port = 0;
+    ret = parse_ip_and_port(self_addr_str, local_ip, 128, &local_port);
+    if(ret == 0) {
+        margo_trace(args->mid, "[flock:pinggy] Margo address IP=%s, PORT=%d", local_ip, local_port);
+    } else {
+        margo_error(args->mid, "[flock:pinggy] Could not parse IP/PORT from Margo address");
+        free(ctx);
+        return FLOCK_ERR_OTHER;
+    }
+
+    ret = start_ssh_tunnel(args->mid, local_ip, local_port, &ctx->tunnel);
+    if(ret == 0) {
+        margo_trace(args->mid, "[flock:pinggy] SSH tunnel start, public address is %s", ctx->tunnel.remote_addr);
+    } else {
+        margo_error(args->mid, "[flock:pinggy] Could not start SSH tunnel");
+        free(ctx);
+        return FLOCK_ERR_OTHER;
+    }
+
+    *context = ctx;
+    return FLOCK_SUCCESS;
+}
+
+static flock_return_t pinggy_gateway_destroy(void* ctx)
+{
+    pinggy_gateway_context* context = (pinggy_gateway_context*)ctx;
+    stop_ssh_tunnel(&context->tunnel);
+    json_object_put(context->config);
+    free(context);
+    return FLOCK_SUCCESS;
+}
+
+static flock_return_t pinggy_gateway_get_config(
+    void* ctx, void (*fn)(void*, const struct json_object*), void* uargs)
+{
+    pinggy_gateway_context* context = (pinggy_gateway_context*)ctx;
+    fn(uargs, context->config);
+    return FLOCK_SUCCESS;
+}
+
+static const char* pinggy_gateway_get_public_address(void* ctx)
+{
+    pinggy_gateway_context* context = (pinggy_gateway_context*)ctx;
+    return context ? context->tunnel.remote_addr : NULL;
+}
+
+static flock_gateway_impl pinggy_gateway = {
+    .name               = "pinggy",
+    .init_gateway       = pinggy_gateway_create,
+    .destroy_gateway    = pinggy_gateway_destroy,
+    .get_config         = pinggy_gateway_get_config,
+    .get_public_address = pinggy_gateway_get_public_address
+};
+
+flock_return_t flock_register_pinggy_gateway(void)
+{
+    return flock_register_gateway(&pinggy_gateway);
+}

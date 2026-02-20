@@ -14,6 +14,7 @@
 /* Note: other backends can be added dynamically using
  * flock_register_backend */
 #include "gateways/default/default-gateway.h"
+#include "gateways/pinggy/pinggy-gateway.h"
 /* Note: other gateways can be added dynamically using
  * flock_register_backend */
 
@@ -118,6 +119,7 @@ flock_return_t flock_provider_register(
 
     /* register gateways */
     flock_register_default_gateway(); // function from gateways/default/default-gateway.h
+    flock_register_pinggy_gateway(); // function from gateways/pinggy/pinggy-gateway.h
 
     /* check if the margo instance is listening */
     flag = margo_is_listening(mid);
@@ -280,11 +282,22 @@ flock_return_t flock_provider_register(
     p->gateway->ctx = gateway_context;
     p->gateway->fn  = a.gateway;
 
-    backend_init_args.self_addr_str = p->gateway->fn->get_public_address(p->gateway->ctx);
+    const char* self_local_addr =  p->gateway->fn->get_local_address(p->gateway->ctx);
+    const char* self_public_addr =  p->gateway->fn->get_public_address(p->gateway->ctx);
 
-    if(!flock_group_view_find_member(&backend_init_args.initial_view,
-                                     backend_init_args.self_addr_str, provider_id))
-        backend_init_args.join = true;
+    backend_init_args.self_addr_str = self_public_addr;
+
+    flock_member_t* self_member_local = flock_group_view_find_member(
+        &backend_init_args.initial_view, p->gateway->fn->get_local_address(p->gateway->ctx), provider_id);
+    flock_member_t* self_member_public = flock_group_view_find_member(
+        &backend_init_args.initial_view, p->gateway->fn->get_public_address(p->gateway->ctx), provider_id);
+
+    backend_init_args.join = !(self_member_local || self_member_public);
+    if(self_member_local && strcmp(self_local_addr, self_public_addr) != 0) {
+        // self address must be changed to the public one in the view
+        free(self_member_local->address);
+        self_member_local->address = strdup(self_public_addr);
+    }
 
     /* register RPCs */
     id = MARGO_REGISTER_PROVIDER(mid, "flock_get_view",

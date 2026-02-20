@@ -65,6 +65,14 @@ typedef flock_return_t (*flock_gateway_get_config_fn)(void*, void (*)(void*, con
 typedef const char* (*flock_gateway_get_public_address_fn)(void*);
 
 /**
+ * @brief Get the local address of this process.
+ *
+ * @param void* Pointer to the gateway's state.
+ * @return const char* Local address as a null-terminated string.
+ */
+typedef const char* (*flock_gateway_get_local_address_fn)(void*);
+
+/**
  * @brief Implementation of an FLOCK gateway.
  */
 typedef struct flock_gateway_impl {
@@ -75,6 +83,7 @@ typedef struct flock_gateway_impl {
     flock_gateway_finalize_fn           destroy_gateway;
     flock_gateway_get_config_fn         get_config;
     flock_gateway_get_public_address_fn get_public_address;
+    flock_gateway_get_local_address_fn  get_local_address;
 } flock_gateway_impl;
 
 /**
