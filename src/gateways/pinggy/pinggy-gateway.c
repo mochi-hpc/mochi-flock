@@ -149,11 +149,6 @@ static int start_ssh_tunnel(const char *ip, int port, ssh_tunnel_t *out)
     posix_spawnattr_t attr;
     posix_spawnattr_init(&attr);
 
-    /*
-    short spawn_flags = POSIX_SPAWN_SETPGROUP;
-    posix_spawnattr_setflags(&attr, spawn_flags);
-    posix_spawnattr_setpgroup(&attr, 0);
-    */
     short spawn_flags = 0;
     posix_spawnattr_setflags(&attr, spawn_flags);
 
