@@ -95,9 +95,9 @@ static void kill_process_group(pid_t pid)
         kill(-pid, SIGTERM);
 }
 
-static int start_ssh_tunnel(const char *ip, int port, ssh_tunnel_t *out)
+static int start_ssh_tunnel(const char *ip, int port, const char *prefix, ssh_tunnel_t *out)
 {
-    if (!ip || !out) {
+    if (!ip || !out || !prefix) {
         errno = EINVAL;
         return -1;
     }
@@ -254,7 +254,7 @@ static int start_ssh_tunnel(const char *ip, int port, ssh_tunnel_t *out)
                               sizeof(out->public_ip));
 
             snprintf(out->public_addr, sizeof(out->public_addr),
-                    "tcp://%s:%d", out->public_ip, out->public_port);
+                    "%s%s:%d", prefix, out->public_ip, out->public_port);
 
             regfree(&re);
             return 0;
@@ -284,7 +284,20 @@ static int stop_ssh_tunnel(ssh_tunnel_t *t)
     return 0;
 }
 
-static int parse_ip_and_port(const char *address, char *ip, size_t ip_size, int *port)
+/*
+ * Parse IP and port from a Mercury address.
+ *
+ * Supported formats:
+ *   protocol://host:port              e.g.  tcp://1.2.3.4:5555
+ *   transport+protocol://host:port    e.g.  zmq+tcp://1.2.3.4:5555
+ *   protocol://[ipv6]:port            e.g.  tcp://[::1]:5555
+ *
+ * If prefix is non-NULL and prefix_size > 0, the address prefix
+ * (everything up to and including "://") is written there,
+ * e.g. "tcp://", "zmq+tcp://", "http+http://".
+ */
+static int parse_ip_and_port(const char *address, char *ip, size_t ip_size,
+                             int *port, char *prefix, size_t prefix_size)
 {
     if (!address || !ip || !port || ip_size == 0)
         return -1;
@@ -294,6 +307,15 @@ static int parse_ip_and_port(const char *address, char *ip, size_t ip_size, int 
         return -1;
 
     p += 3; // skip "://"
+
+    // ---------- Store prefix (everything up to and including "://") ----------
+    if (prefix && prefix_size > 0) {
+        size_t plen = (size_t)(p - address);
+        if (plen >= prefix_size)
+            plen = prefix_size - 1;
+        memcpy(prefix, address, plen);
+        prefix[plen] = '\0';
+    }
 
     const char *host_start = p;
     const char *host_end = NULL;
@@ -368,17 +390,20 @@ static flock_return_t pinggy_gateway_create(
     margo_trace(args->mid, "[flock:pinggy] Margo address is %s", ctx->tunnel.local_addr);
 
     char local_ip[128] = {0};
+    char addr_prefix[64] = {0};
     int local_port = 0;
-    ret = parse_ip_and_port(ctx->tunnel.local_addr, local_ip, 128, &local_port);
+    ret = parse_ip_and_port(ctx->tunnel.local_addr, local_ip, 128, &local_port,
+                            addr_prefix, sizeof(addr_prefix));
     if(ret == 0) {
-        margo_trace(args->mid, "[flock:pinggy] Margo address has IP=%s and PORT=%d", local_ip, local_port);
+        margo_trace(args->mid, "[flock:pinggy] Margo address has IP=%s and PORT=%d (prefix=%s)",
+                    local_ip, local_port, addr_prefix);
     } else {
         margo_error(args->mid, "[flock:pinggy] Could not parse IP/PORT from Margo address");
         free(ctx);
         return FLOCK_ERR_OTHER;
     }
 
-    ret = start_ssh_tunnel(local_ip, local_port, &ctx->tunnel);
+    ret = start_ssh_tunnel(local_ip, local_port, addr_prefix, &ctx->tunnel);
     if(ret == 0) {
         margo_trace(args->mid, "[flock:pinggy] SSH tunnel started, public address is %s (%s)",
                     ctx->tunnel.public_addr, ctx->tunnel.public_url);
