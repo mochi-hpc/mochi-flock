@@ -15,8 +15,7 @@ set (backend-src-files
      backends/swim/swim-gossip-buffer.c)
 
 set (gateway-src-files
-     gateways/default/default-gateway.c
-     gateways/pinggy/pinggy-gateway.c)
+     gateways/default/default-gateway.c)
 
 set (bedrock-module-src-files
      bedrock-module.cpp)
@@ -59,6 +58,12 @@ target_include_directories (flock-server BEFORE PUBLIC
 if (ENABLE_MPI)
     target_compile_definitions (flock-server PRIVATE ENABLE_MPI)
     target_link_libraries (flock-server PUBLIC MPI::MPI_C)
+endif ()
+if (ENABLE_PINGGY)
+    target_sources (flock-server PRIVATE gateways/pinggy/pinggy-gateway.c)
+    target_compile_definitions (flock-server PRIVATE ENABLE_PINGGY)
+    target_link_libraries (flock-server PRIVATE ${PINGGY_LIBRARY})
+    target_include_directories (flock-server PRIVATE ${PINGGY_INCLUDE_DIR})
 endif ()
 set_target_properties (flock-server
     PROPERTIES VERSION ${FLOCK_VERSION}

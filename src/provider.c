@@ -14,7 +14,9 @@
 /* Note: other backends can be added dynamically using
  * flock_register_backend */
 #include "gateways/default/default-gateway.h"
+#ifdef ENABLE_PINGGY
 #include "gateways/pinggy/pinggy-gateway.h"
+#endif
 /* Note: other gateways can be added dynamically using
  * flock_register_backend */
 
@@ -119,7 +121,9 @@ flock_return_t flock_provider_register(
 
     /* register gateways */
     flock_register_default_gateway(); // function from gateways/default/default-gateway.h
+#ifdef ENABLE_PINGGY
     flock_register_pinggy_gateway(); // function from gateways/pinggy/pinggy-gateway.h
+#endif
 
     /* check if the margo instance is listening */
     flag = margo_is_listening(mid);

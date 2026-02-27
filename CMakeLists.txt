@@ -16,6 +16,7 @@ option (ENABLE_BEDROCK  "Build bedrock module" OFF)
 option (ENABLE_COVERAGE "Build with coverage" OFF)
 option (ENABLE_MPI      "Build with MPI support" OFF)
 option (ENABLE_PYTHON   "Build with Python support" OFF)
+option (ENABLE_PINGGY   "Build with Pinggy gateway support" OFF)
 
 # library version set here (e.g. for shared libs).
 set (FLOCK_VERSION_MAJOR 0)
@@ -70,6 +71,11 @@ find_package (thallium REQUIRED)
 
 if (ENABLE_MPI)
     find_package (MPI REQUIRED)
+endif ()
+
+if (ENABLE_PINGGY)
+    find_library (PINGGY_LIBRARY NAMES pinggy REQUIRED)
+    find_path (PINGGY_INCLUDE_DIR pinggy/pinggy.h REQUIRED)
 endif ()
 
 # search for Python
