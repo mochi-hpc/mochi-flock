@@ -564,23 +564,34 @@ flock_return_t flock_provider_add_update_callbacks(
         void* context)
 {
     ABT_rwlock_wrlock(provider->update_callbacks_lock);
-    // Append at the end or with the same context if found
-    // (this will replace any membership/metadata callback already
-    // registered with the same context).
+    // Look for an existing registration with the same context and replace it
+    // (this will replace any membership/metadata callback already registered
+    // with the same context). Otherwise append a new node at the end of the
+    // list. The list may be empty (head is NULL), so it is walked with a
+    // proper NULL check instead of dereferencing the head unconditionally.
     update_callback_t current = provider->update_callbacks;
-    while(true) {
+    update_callback_t last    = NULL;
+    while(current) {
         if(current->args == context) {
             current->member_cb   = member_update_fn;
             current->metadata_cb = metadata_update_fn;
-            break;
-        } else if(current->next == NULL) {
-            current->next = (update_callback_t)malloc(sizeof(*current->next));
-            current->next->args = context;
-            current->next->next = NULL;
-            // callbacks will be set in the next loop
+            ABT_rwlock_unlock(provider->update_callbacks_lock);
+            return FLOCK_SUCCESS;
         }
+        last    = current;
         current = current->next;
     }
+    update_callback_t node = (update_callback_t)calloc(1, sizeof(*node));
+    if(!node) {
+        ABT_rwlock_unlock(provider->update_callbacks_lock);
+        return FLOCK_ERR_ALLOCATION;
+    }
+    node->member_cb   = member_update_fn;
+    node->metadata_cb = metadata_update_fn;
+    node->args        = context;
+    node->next        = NULL;
+    if(last) last->next = node;
+    else     provider->update_callbacks = node;
     ABT_rwlock_unlock(provider->update_callbacks_lock);
     return FLOCK_SUCCESS;
 }
@@ -590,9 +601,12 @@ flock_return_t flock_provider_remove_update_callbacks(
         void* context)
 {
     ABT_rwlock_wrlock(provider->update_callbacks_lock);
+    // The list may be empty, or the context may never have been registered,
+    // so it is walked with a proper NULL check instead of a while(true) loop
+    // that would dereference NULL or run past the tail.
     update_callback_t current = provider->update_callbacks;
     update_callback_t previous = NULL;
-    while(true) {
+    while(current) {
         if(current->args == context) {
             if(!previous) {
                 provider->update_callbacks = current->next;
@@ -600,13 +614,14 @@ flock_return_t flock_provider_remove_update_callbacks(
                 previous->next = current->next;
             }
             free(current);
-            break;
+            ABT_rwlock_unlock(provider->update_callbacks_lock);
+            return FLOCK_SUCCESS;
         }
         previous = current;
         current  = current->next;
     }
     ABT_rwlock_unlock(provider->update_callbacks_lock);
-    return FLOCK_SUCCESS;
+    return FLOCK_ERR_INVALID_ARGS;
 }
 
 static void dispatch_member_update(
@@ -616,7 +631,8 @@ static void dispatch_member_update(
     ABT_rwlock_rdlock(provider->update_callbacks_lock);
     update_callback_t c = provider->update_callbacks;
     while(c) {
-        (c->member_cb)(c->args, u, address, provider_id);
+        if(c->member_cb)
+            (c->member_cb)(c->args, u, address, provider_id);
         c = c->next;
     }
     /* write the current view of the group */
@@ -633,7 +649,8 @@ static void dispatch_metadata_update(
     ABT_rwlock_rdlock(provider->update_callbacks_lock);
     update_callback_t c = provider->update_callbacks;
     while(c) {
-        (c->metadata_cb)(c->args, key, value);
+        if(c->metadata_cb)
+            (c->metadata_cb)(c->args, key, value);
         c = c->next;
     }
     /* write the current view of the group */
