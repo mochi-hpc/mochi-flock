@@ -21,7 +21,7 @@ option (ENABLE_PINGGY   "Build with Pinggy gateway support" OFF)
 # library version set here (e.g. for shared libs).
 set (FLOCK_VERSION_MAJOR 0)
 set (FLOCK_VERSION_MINOR 7)
-set (FLOCK_VERSION_PATCH 0)
+set (FLOCK_VERSION_PATCH 1)
 set (FLOCK_VERSION
      "${FLOCK_VERSION_MAJOR}.${FLOCK_VERSION_MINOR}.${FLOCK_VERSION_PATCH}")
 
