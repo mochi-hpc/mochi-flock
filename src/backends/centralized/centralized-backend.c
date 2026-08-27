@@ -5,6 +5,7 @@
  */
 #include <string.h>
 #include <stdlib.h>
+#include <stdatomic.h>
 #include <json-c/json.h>
 #include <margo-timer.h>
 #include "flock/flock-backend.h"
@@ -48,6 +49,11 @@ typedef struct centralized_context {
     flock_membership_update_fn member_update_callback;
     flock_metadata_update_fn   metadata_update_callback;
     void*                      callback_context;
+    /* teardown coordination */
+    _Atomic bool               shutting_down;
+    _Atomic int                inflight;   /* # of RPC handlers / timer callbacks currently using ctx */
+    ABT_mutex_memory           inflight_mtx;  /* guards the inflight-reached-zero notification */
+    ABT_cond_memory            inflight_cond; /* signalled when inflight drops to zero */
 } centralized_context;
 
 /**
@@ -84,6 +90,49 @@ static inline void member_state_free(void* args)
     ABT_mutex_unlock(ABT_MUTEX_MEMORY_GET_HANDLE(&state->mtx));
     free(state->address_str);
     free(state);
+}
+
+/* Concurrency guard for teardown.
+ *
+ * centralized_destroy_group() sets shutting_down and then deregisters the RPCs,
+ * but margo_deregister() does not join handler ULTs that are already running,
+ * and a running ping timer callback may also still be using ctx (and the
+ * member_state it was launched with). Any code path that dereferences ctx from a
+ * Margo ULT (RPC handlers, ping timer callback) must bracket its work with
+ * centralized_activity_begin/end so that destroy can wait for all of them to
+ * drain before it frees the member states and ctx.
+ *
+ * centralized_activity_begin returns true (and takes a reference that MUST be
+ * released with centralized_activity_end) only when the backend is not shutting
+ * down; otherwise it returns false and holds no reference, and the caller must
+ * not touch ctx.
+ *
+ * The drain in centralized_destroy_group() cannot busy-sleep with
+ * margo_thread_sleep(): when a provider is torn down from a Margo finalization
+ * callback the progress loop is already stopped, so margo timers never fire and
+ * the sleep would hang. Instead the last reference to be released signals a
+ * condition variable that the drain waits on. */
+static inline void centralized_inflight_decr(centralized_context* ctx)
+{
+    ABT_mutex_lock(ABT_MUTEX_MEMORY_GET_HANDLE(&ctx->inflight_mtx));
+    if(atomic_fetch_sub(&ctx->inflight, 1) == 1)
+        ABT_cond_broadcast(ABT_COND_MEMORY_GET_HANDLE(&ctx->inflight_cond));
+    ABT_mutex_unlock(ABT_MUTEX_MEMORY_GET_HANDLE(&ctx->inflight_mtx));
+}
+
+static inline bool centralized_activity_begin(centralized_context* ctx)
+{
+    atomic_fetch_add(&ctx->inflight, 1);
+    if(atomic_load(&ctx->shutting_down)) {
+        centralized_inflight_decr(ctx);
+        return false;
+    }
+    return true;
+}
+
+static inline void centralized_activity_end(centralized_context* ctx)
+{
+    centralized_inflight_decr(ctx);
 }
 
 /**
@@ -505,6 +554,12 @@ static void ping_timer_callback(void* args)
 {
     double now, next_ping_ms;
     member_state* state = (member_state*)args;
+    centralized_context* ctx = state->context;
+
+    /* Keep ctx (and this member_state) alive for the duration of the callback;
+     * bail out immediately if the backend is tearing down. destroy_group cancels
+     * the timers and then waits for any running callback to drain here. */
+    if(!centralized_activity_begin(ctx)) return;
     state->in_timer_callback = true;
     hg_return_t hret = HG_SUCCESS;
 
@@ -544,6 +599,7 @@ static void ping_timer_callback(void* args)
     // request was canceled, we need to terminate
     if(hret == HG_CANCELED) {
         state->in_timer_callback = false;
+        centralized_activity_end(ctx);
         return;
     }
 
@@ -570,6 +626,7 @@ static void ping_timer_callback(void* args)
 
         broadcast_membership_update(context, FLOCK_MEMBER_DIED, address, provider_id);
         free(address);
+        centralized_activity_end(ctx);
         return;
     }
 
@@ -583,10 +640,13 @@ restart_timer:
     state->last_ping_timestamp = now;
     if(next_ping_ms <= 0) next_ping_ms = 1.0;
     ABT_mutex_lock(ABT_MUTEX_MEMORY_GET_HANDLE(&state->mtx));
-    if(state->ping_timer) {
+    /* Do not re-arm once teardown has started: destroy_group has (or will) cancel
+     * the timers and will free this member_state after we drain. */
+    if(state->ping_timer && !ctx->shutting_down) {
         margo_timer_start(state->ping_timer, next_ping_ms);
     }
     ABT_mutex_unlock(ABT_MUTEX_MEMORY_GET_HANDLE(&state->mtx));
+    centralized_activity_end(ctx);
 }
 
 static DEFINE_MARGO_RPC_HANDLER(ping_rpc_ult)
@@ -602,13 +662,14 @@ static void ping_rpc_ult(hg_handle_t h)
     margo_request req = MARGO_REQUEST_NULL;
     margo_irespond(h, NULL, &req);
 
-    if(digest == ctx->view.digest) {
-        goto finish;
+    /* Only touch ctx if the backend is not tearing down; keep it alive while we
+     * do. */
+    if(ctx && centralized_activity_begin(ctx)) {
+        if(digest != ctx->view.digest)
+            get_view(ctx);
+        centralized_activity_end(ctx);
     }
 
-    get_view(ctx);
-
-finish:
     margo_wait(req);
     margo_free_input(h, &digest);
     margo_destroy(h);
@@ -627,10 +688,12 @@ static void get_view_rpc_ult(hg_handle_t h)
     /* find the context */
     const struct hg_info* info = margo_get_info(h);
     centralized_context* ctx = (centralized_context*)margo_registered_data(mid, info->id);
-    if(!ctx) goto finish;
+    if(!ctx || !centralized_activity_begin(ctx)) goto finish;
 
     /* respond with the current view */
     margo_respond(h, &ctx->view);
+
+    centralized_activity_end(ctx);
 
 finish:
     margo_destroy(h);
@@ -685,7 +748,8 @@ static void leave_rpc_ult(hg_handle_t h)
     /* find the context */
     const struct hg_info* info = margo_get_info(h);
     centralized_context* ctx = (centralized_context*)margo_registered_data(mid, info->id);
-    if(!ctx) goto finish;
+    bool active = ctx && centralized_activity_begin(ctx);
+    if(!active) goto finish;
 
     /* the leaving provider sent its rank */
     hg_return_t hret = margo_get_input(h, &in);
@@ -722,6 +786,7 @@ static void leave_rpc_ult(hg_handle_t h)
     broadcast_membership_update(ctx, FLOCK_MEMBER_LEFT, address, in.provider_id);
 
 finish:
+    if(active) centralized_activity_end(ctx);
     margo_respond(h, NULL);
     margo_destroy(h);
 }
@@ -761,7 +826,8 @@ static void join_rpc_ult(hg_handle_t h)
     /* find the context */
     const struct hg_info* info = margo_get_info(h);
     centralized_context* ctx = (centralized_context*)margo_registered_data(mid, info->id);
-    if(!ctx) goto finish;
+    bool active = ctx && centralized_activity_begin(ctx);
+    if(!active) goto finish;
 
     /* convert incoming address into a string */
     char address[256];
@@ -822,6 +888,7 @@ static void join_rpc_ult(hg_handle_t h)
     out.view = &ctx->view;
 
 finish:
+    if(active) centralized_activity_end(ctx);
     margo_respond(h, &out);
     margo_destroy(h);
 }
@@ -960,7 +1027,8 @@ static void membership_update_rpc_ult(hg_handle_t h)
     /* find the context */
     const struct hg_info* info = margo_get_info(h);
     centralized_context* ctx = (centralized_context*)margo_registered_data(mid, info->id);
-    if(!ctx) goto finish;
+    bool active = ctx && centralized_activity_begin(ctx);
+    if(!active) goto finish;
 
     hret = margo_get_input(h, &in);
     if(hret != HG_SUCCESS) {
@@ -984,6 +1052,7 @@ static void membership_update_rpc_ult(hg_handle_t h)
     }
 
 finish:
+    if(active) centralized_activity_end(ctx);
     margo_free_input(h, &in);
     margo_respond(h, &out);
     margo_destroy(h);
@@ -993,10 +1062,18 @@ static flock_return_t centralized_destroy_group(void* ctx)
 {
     if(!ctx) return FLOCK_SUCCESS;
     centralized_context* context = (centralized_context*)ctx;
+
+    /* Signal teardown first: this stops ping timer callbacks from re-arming and
+     * makes any RPC handler / timer callback that has not yet started its work
+     * bail out (see centralized_activity_begin). */
+    context->shutting_down = true;
+
     if(context->is_primary) {
         // Terminate the ULTs that ping the other members
         // We do this before deregistering the RPCs to avoid ULTs
-        // failing because they are still using the RPC ids.
+        // failing because they are still using the RPC ids. The member states
+        // (and their timers) are freed further down, after the drain, so that a
+        // running timer callback is never pulled out from under itself.
         FLOCK_GROUP_VIEW_LOCK(&context->view);
         margo_timer_t* timers = (margo_timer_t*)calloc(context->view.members.size, sizeof(*timers));
         size_t num_timers = 0;
@@ -1009,18 +1086,40 @@ static flock_return_t centralized_destroy_group(void* ctx)
         }
         margo_timer_cancel_many(num_timers, timers);
         free(timers);
-        flock_group_view_clear_extra(&context->view);
         FLOCK_GROUP_VIEW_UNLOCK(&context->view);
     } else {
         leave(ctx);
     }
-    // FIXME: in non-primary members, it's possible that we are calling margo_deregister
-    // while a ping RPC is in flight. There is nothing much we can do, this is something
-    // to solve at the Mercury level. See here: https://github.com/mercury-hpc/mercury/issues/534
+
+    // Deregister the RPCs so no NEW handler is dispatched. margo_deregister does
+    // not join handlers that are already running, so we drain them below.
     if(context->ping_rpc_id) margo_deregister(context->mid, context->ping_rpc_id);
     if(context->get_view_rpc_id) margo_deregister(context->mid, context->get_view_rpc_id);
     if(context->membership_update_rpc_id) margo_deregister(context->mid, context->membership_update_rpc_id);
     if(context->leave_rpc_id) margo_deregister(context->mid, context->leave_rpc_id);
+
+    // Wait for any in-flight RPC handler or ping timer callback to stop using
+    // ctx. After this nothing else can touch ctx (or the member states), so it
+    // is safe to tear everything down. This is what the old FIXME could not do:
+    // a ping RPC / membership update in flight now finishes here before we free.
+    //
+    // We wait on a condition variable rather than margo_thread_sleep(): this
+    // function can run from a Margo finalization callback, at which point the
+    // progress loop is already stopped and margo timers would never fire.
+    ABT_mutex_lock(ABT_MUTEX_MEMORY_GET_HANDLE(&context->inflight_mtx));
+    while(atomic_load(&context->inflight) > 0)
+        ABT_cond_wait(ABT_COND_MEMORY_GET_HANDLE(&context->inflight_cond),
+                      ABT_MUTEX_MEMORY_GET_HANDLE(&context->inflight_mtx));
+    ABT_mutex_unlock(ABT_MUTEX_MEMORY_GET_HANDLE(&context->inflight_mtx));
+
+    // Now that no timer callback is running, free the member states (which
+    // cancels and destroys their timers) on the primary.
+    if(context->is_primary) {
+        FLOCK_GROUP_VIEW_LOCK(&context->view);
+        flock_group_view_clear_extra(&context->view);
+        FLOCK_GROUP_VIEW_UNLOCK(&context->view);
+    }
+
     if(context->primary.address) margo_addr_free(context->mid, context->primary.address);
     if(context->config) json_object_put(context->config);
     flock_group_view_clear(&context->view);

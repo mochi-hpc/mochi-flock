@@ -70,6 +70,9 @@ typedef struct swim_context {
     size_t        probe_index;
     margo_timer_t protocol_timer;
     _Atomic bool  shutting_down;
+    _Atomic int   inflight;                /* # of RPC handlers / timer callbacks currently using ctx */
+    ABT_mutex_memory inflight_mtx;         /* guards the inflight-reached-zero notification */
+    ABT_cond_memory  inflight_cond;        /* signalled when inflight drops to zero */
     bool          skip_leave_on_destroy;  /* For testing: simulate crash without leave announcement */
 
     /* Gossip buffer */
@@ -110,6 +113,44 @@ static inline void swim_member_state_free(void* args) {
 
 static inline swim_member_state_t* get_member_state(flock_member_t* member) {
     return (swim_member_state_t*)member->extra.data;
+}
+
+/* Concurrency guard for teardown.
+ *
+ * swim_destroy_group() sets shutting_down and then deregisters the SWIM RPCs,
+ * but margo_deregister() does not join handler ULTs that are already running,
+ * and a running protocol timer callback may also still be using ctx. Any code
+ * path that dereferences ctx from a Margo ULT (RPC handlers, timer callback)
+ * must bracket its work with swim_activity_begin/end so that destroy can wait
+ * for all of them to drain before it frees ctx.
+ *
+ * swim_activity_begin returns true (and takes a reference that MUST be released
+ * with swim_activity_end) only when the backend is not shutting down; otherwise
+ * it returns false and holds no reference, and the caller must not touch ctx.
+ *
+ * The drain in swim_destroy_group() cannot busy-sleep with margo_thread_sleep():
+ * when a provider is torn down from a Margo finalization callback the progress
+ * loop is already stopped, so margo timers never fire and the sleep would hang.
+ * Instead the last reference to be released signals a condition variable that
+ * the drain waits on. */
+static inline void swim_inflight_decr(swim_context* ctx) {
+    ABT_mutex_lock(ABT_MUTEX_MEMORY_GET_HANDLE(&ctx->inflight_mtx));
+    if(atomic_fetch_sub(&ctx->inflight, 1) == 1)
+        ABT_cond_broadcast(ABT_COND_MEMORY_GET_HANDLE(&ctx->inflight_cond));
+    ABT_mutex_unlock(ABT_MUTEX_MEMORY_GET_HANDLE(&ctx->inflight_mtx));
+}
+
+static inline bool swim_activity_begin(swim_context* ctx) {
+    atomic_fetch_add(&ctx->inflight, 1);
+    if(atomic_load(&ctx->shutting_down)) {
+        swim_inflight_decr(ctx);
+        return false;
+    }
+    return true;
+}
+
+static inline void swim_activity_end(swim_context* ctx) {
+    swim_inflight_decr(ctx);
 }
 
 /* ============================================================================
@@ -252,6 +293,11 @@ static void ping_rpc_ult(hg_handle_t h) {
     swim_ping_in_t in = {0};
     swim_ping_out_t out = {0};
 
+    /* Reject work if the backend is tearing down; keep ctx alive otherwise. */
+    bool active = ctx && swim_activity_begin(ctx);
+    if(!active)
+        goto finish;
+
     hg_return_t hret = margo_get_input(h, &in);
     if(hret != HG_SUCCESS) {
         margo_error(mid, "[flock/swim] Failed to get ping input");
@@ -271,6 +317,7 @@ static void ping_rpc_ult(hg_handle_t h) {
     margo_free_input(h, &in);
 
 finish:
+    if(active) swim_activity_end(ctx);
     margo_respond(h, &out);
     margo_destroy(h);
 }
@@ -292,6 +339,11 @@ static void ping_req_rpc_ult(hg_handle_t h) {
     swim_ping_req_out_t out = {0};
     hg_handle_t ping_handle = HG_HANDLE_NULL;
     hg_addr_t target_addr = HG_ADDR_NULL;
+
+    /* Reject work if the backend is tearing down; keep ctx alive otherwise. */
+    bool active = ctx && swim_activity_begin(ctx);
+    if(!active)
+        goto finish;
 
     hg_return_t hret = margo_get_input(h, &in);
     if(hret != HG_SUCCESS) {
@@ -358,6 +410,7 @@ respond:
     if(target_addr != HG_ADDR_NULL) margo_addr_free(mid, target_addr);
 
 finish:
+    if(active) swim_activity_end(ctx);
     margo_respond(h, &out);
     margo_destroy(h);
 }
@@ -376,6 +429,11 @@ static void announce_rpc_ult(hg_handle_t h) {
     swim_context* ctx = (swim_context*)margo_registered_data(mid, info->id);
 
     swim_announce_in_t in = {0};
+
+    /* Reject work if the backend is tearing down; keep ctx alive otherwise. */
+    bool active = ctx && swim_activity_begin(ctx);
+    if(!active)
+        goto finish;
 
     hg_return_t hret = margo_get_input(h, &in);
     if(hret != HG_SUCCESS) {
@@ -398,6 +456,7 @@ static void announce_rpc_ult(hg_handle_t h) {
     margo_free_input(h, &in);
 
 finish:
+    if(active) swim_activity_end(ctx);
     margo_respond(h, NULL);
     margo_destroy(h);
 }
@@ -548,7 +607,9 @@ next_entry:;
 static void protocol_timer_callback(void* args) {
     swim_context* ctx = (swim_context*)args;
 
-    if(atomic_load(&ctx->shutting_down)) return;
+    /* Keep ctx alive for the duration of this callback; bail out immediately if
+     * the backend is tearing down (destroy_group waits for us to drain). */
+    if(!swim_activity_begin(ctx)) return;
 
     /* Step 1: Check suspicion timeouts */
     check_suspicion_timeouts(ctx);
@@ -741,6 +802,7 @@ restart_timer:
     if(!atomic_load(&ctx->shutting_down)) {
         margo_timer_start(ctx->protocol_timer, ctx->protocol_period_ms);
     }
+    swim_activity_end(ctx);
 }
 
 /* ============================================================================
@@ -1017,6 +1079,7 @@ static flock_return_t swim_create_group(
     ctx->self_address = strdup(args->self_addr_str);
     ctx->self_incarnation = 1;
     atomic_store(&ctx->shutting_down, false);
+    atomic_store(&ctx->inflight, 0);
 
     ctx->protocol_period_ms = protocol_period_ms;
     ctx->ping_timeout_ms = ping_timeout_ms;
@@ -1141,20 +1204,46 @@ static flock_return_t swim_destroy_group(void* ctx_ptr) {
     if(!ctx_ptr) return FLOCK_SUCCESS;
     swim_context* ctx = (swim_context*)ctx_ptr;
 
+    /* Signal teardown first: this stops the protocol timer from re-arming and
+     * makes any RPC handler / timer callback that has not yet started its work
+     * bail out (see swim_activity_begin). */
     atomic_store(&ctx->shutting_down, true);
 
-    /* Announce leave to other members (unless crash mode is enabled) */
+    /* Announce leave to other members (unless crash mode is enabled). This is an
+     * outbound operation on the destroy thread and still needs ctx intact. */
     if(!ctx->skip_leave_on_destroy && ctx->view.members.size > 1) {
         swim_gossip_buffer_add(ctx->gossip_buffer, SWIM_GOSSIP_LEAVE,
                                ctx->self_address, ctx->provider_id, ctx->self_incarnation);
         swim_announce_to_random_members(ctx, SWIM_GOSSIP_LEAVE);
     }
 
-    /* Cancel and destroy timer */
-    if(ctx->protocol_timer) {
+    /* Cancel the timer and deregister the RPCs so no NEW timer callback or RPC
+     * handler is dispatched. margo_deregister/margo_timer_cancel do not join
+     * callbacks that are already running, so we must still drain them below. */
+    if(ctx->protocol_timer)
         margo_timer_cancel(ctx->protocol_timer);
+    if(ctx->ping_rpc_id) margo_deregister(ctx->mid, ctx->ping_rpc_id);
+    if(ctx->ping_req_rpc_id) margo_deregister(ctx->mid, ctx->ping_req_rpc_id);
+    if(ctx->announce_rpc_id) margo_deregister(ctx->mid, ctx->announce_rpc_id);
+
+    /* Wait for any in-flight RPC handler or timer callback to stop using ctx.
+     * After this point nothing else can touch ctx, so it is safe to tear it
+     * down. This is what closes the simultaneous-teardown use-after-free: a
+     * peer's LEAVE announce that is mid-flight in announce_rpc_ult finishes
+     * here before we free anything.
+     *
+     * We wait on a condition variable rather than margo_thread_sleep(): this
+     * function can run from a Margo finalization callback, at which point the
+     * progress loop is already stopped and margo timers would never fire. */
+    ABT_mutex_lock(ABT_MUTEX_MEMORY_GET_HANDLE(&ctx->inflight_mtx));
+    while(atomic_load(&ctx->inflight) > 0)
+        ABT_cond_wait(ABT_COND_MEMORY_GET_HANDLE(&ctx->inflight_cond),
+                      ABT_MUTEX_MEMORY_GET_HANDLE(&ctx->inflight_mtx));
+    ABT_mutex_unlock(ABT_MUTEX_MEMORY_GET_HANDLE(&ctx->inflight_mtx));
+
+    /* Destroy the timer now that no callback is running. */
+    if(ctx->protocol_timer)
         margo_timer_destroy(ctx->protocol_timer);
-    }
 
     /* Free member addresses */
     FLOCK_GROUP_VIEW_LOCK(&ctx->view);
@@ -1166,11 +1255,6 @@ static flock_return_t swim_destroy_group(void* ctx_ptr) {
         }
     }
     FLOCK_GROUP_VIEW_UNLOCK(&ctx->view);
-
-    /* Deregister RPCs */
-    if(ctx->ping_rpc_id) margo_deregister(ctx->mid, ctx->ping_rpc_id);
-    if(ctx->ping_req_rpc_id) margo_deregister(ctx->mid, ctx->ping_req_rpc_id);
-    if(ctx->announce_rpc_id) margo_deregister(ctx->mid, ctx->announce_rpc_id);
 
     /* Free resources */
     if(ctx->gossip_buffer) swim_gossip_buffer_destroy(ctx->gossip_buffer);

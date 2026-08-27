@@ -327,8 +327,13 @@ flock_return_t flock_provider_register(
     p->group->ctx = context;
     p->group->fn  = a.backend;
 
-    /* set the finalize callback */
-    margo_provider_push_finalize_callback(mid, p, &flock_finalize_provider, p);
+    /* Set the teardown callback. We use a PRE-finalize callback rather than a
+     * finalize callback: pre-finalize callbacks run while the Margo progress
+     * loop is still alive, so backend teardown can still issue/receive RPCs
+     * (e.g. the SWIM/centralized LEAVE announce), let margo timers fire, and
+     * drain in-flight RPC handlers. A finalize callback runs after the progress
+     * thread has been joined, where all of that would hang. */
+    margo_provider_push_prefinalize_callback(mid, p, &flock_finalize_provider, p);
 
     /* set the provider's identity */
     margo_provider_register_identity(mid, provider_id, "flock");
@@ -358,6 +363,27 @@ static void flock_finalize_provider(void* p)
     flock_provider_t provider = (flock_provider_t)p;
     margo_trace(provider->mid, "[flock] Finalizing provider");
 
+    /* Stop the backend first. destroy_group cancels the backend's timers,
+     * deregisters its RPCs, and drains any in-flight handlers, so that after
+     * this call nothing can invoke dispatch_member_update/dispatch_metadata_update
+     * anymore. This must happen before the update-callbacks lock and list (which
+     * those dispatch functions use) are freed below. */
+    if(provider->group)
+        provider->group->fn->destroy_group(provider->group->ctx);
+    free(provider->group);
+
+    /* Deregister the provider's own RPCs and identity. get_view is currently the
+     * only flock-owned RPC; register any others here and deregister them too. */
+    margo_provider_deregister_identity(provider->mid, provider->provider_id);
+    margo_deregister(provider->mid, provider->get_view_id);
+
+    /* destroy the gateway's context */
+    if(provider->gateway)
+        provider->gateway->fn->destroy_gateway(provider->gateway->ctx);
+    free(provider->gateway);
+
+    /* The backend is stopped and the RPCs are gone: no dispatch can run anymore,
+     * so it is now safe to free the update-callbacks lock and list. */
     ABT_rwlock_free(&provider->update_callbacks_lock);
     update_callback_t u = provider->update_callbacks;
     update_callback_t tmp;
@@ -366,20 +392,6 @@ static void flock_finalize_provider(void* p)
         u = u->next;
         free(tmp);
     }
-
-    margo_provider_deregister_identity(provider->mid, provider->provider_id);
-    margo_deregister(provider->mid, provider->get_view_id);
-    /* FIXME deregister other RPC ids ... */
-
-    /* destroy the gateway's context */
-    if(provider->gateway)
-        provider->gateway->fn->destroy_gateway(provider->gateway->ctx);
-    free(provider->gateway);
-
-    /* destroy the group's context */
-    if(provider->group)
-        provider->group->fn->destroy_group(provider->group->ctx);
-    free(provider->group);
 
     free(provider->filename);
     margo_instance_id mid = provider->mid;
@@ -393,8 +405,8 @@ flock_return_t flock_provider_destroy(
 {
     margo_instance_id mid = provider->mid;
     margo_trace(mid, "[flock] Destroying provider");
-    /* pop the finalize callback */
-    margo_provider_pop_finalize_callback(provider->mid, provider);
+    /* pop the pre-finalize callback so it does not run again at margo_finalize */
+    margo_provider_pop_prefinalize_callback(provider->mid, provider);
     /* call the callback */
     flock_finalize_provider(provider);
     margo_trace(mid, "[flock] Provider successfuly destroyed");
