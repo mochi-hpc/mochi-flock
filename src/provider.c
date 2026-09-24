@@ -322,10 +322,11 @@ flock_return_t flock_provider_register(
         // LCOV_EXCL_STOP
     }
 
-    /* set the provider's group */
-    p->group = calloc(1, sizeof(*(p->group)));
-    p->group->ctx = context;
-    p->group->fn  = a.backend;
+    /* set the provider's group, fully built before it is published */
+    flock_group* new_group = calloc(1, sizeof(*new_group));
+    new_group->ctx = context;
+    new_group->fn  = a.backend;
+    __atomic_store_n(&p->group, new_group, __ATOMIC_RELEASE);
 
     /* Set the teardown callback. We use a PRE-finalize callback rather than a
      * finalize callback: pre-finalize callbacks run while the Margo progress
@@ -647,10 +648,13 @@ static void dispatch_member_update(
             (c->member_cb)(c->args, u, address, provider_id);
         c = c->next;
     }
-    /* write the current view of the group */
-    provider->group->fn->get_view(
-        provider->group->ctx,
-        serialize_view_to_file, provider);
+    /* write the current view of the group -- unless the backend is still
+     * inside init_group(): its RPC handlers are live by then, so a concurrent
+     * joiner's gossip can land here before provider->group is set.
+     * flock_provider_register() writes the file itself once it is. */
+    flock_group* group = __atomic_load_n(&provider->group, __ATOMIC_ACQUIRE);
+    if(group)
+        group->fn->get_view(group->ctx, serialize_view_to_file, provider);
     ABT_rwlock_unlock(provider->update_callbacks_lock);
 }
 
@@ -665,9 +669,12 @@ static void dispatch_metadata_update(
             (c->metadata_cb)(c->args, key, value);
         c = c->next;
     }
-    /* write the current view of the group */
-    provider->group->fn->get_view(
-        provider->group->ctx,
-        serialize_view_to_file, provider);
+    /* write the current view of the group -- unless the backend is still
+     * inside init_group(): its RPC handlers are live by then, so a concurrent
+     * joiner's gossip can land here before provider->group is set.
+     * flock_provider_register() writes the file itself once it is. */
+    flock_group* group = __atomic_load_n(&provider->group, __ATOMIC_ACQUIRE);
+    if(group)
+        group->fn->get_view(group->ctx, serialize_view_to_file, provider);
     ABT_rwlock_unlock(provider->update_callbacks_lock);
 }
