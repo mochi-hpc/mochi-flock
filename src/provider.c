@@ -490,7 +490,12 @@ static void flock_get_view_ult(hg_handle_t h)
     const struct hg_info* info = margo_get_info(h);
     flock_provider_t provider = (flock_provider_t)margo_registered_data(mid, info->id);
 
-    flock_group* group = provider->group;
+    /* Read provider->group with acquire semantics: this handler is live before
+     * flock_provider_register() publishes the group (that store is a matching
+     * release), and it can run on an RPC-handler ULT concurrently with it. The
+     * acquire load pairs with the release store so a non-NULL group is seen with
+     * its ctx/fn fully initialized. */
+    flock_group* group = __atomic_load_n(&provider->group, __ATOMIC_ACQUIRE);
     if(!group) {
         err.ret = FLOCK_ERR_INVALID_GROUP;
         goto error;
